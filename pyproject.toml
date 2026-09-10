@@ -31,3 +31,7 @@ include = ["app*"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
+# B008: Depends(...) como valor default é o padrão idiomático do FastAPI.
+ignore = ["B008"]

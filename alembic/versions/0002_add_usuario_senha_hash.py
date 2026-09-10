@@ -11,8 +11,9 @@ Revises: 0001_baseline
 Create Date: 2026-09-10
 
 """
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "0002_add_usuario_senha_hash"

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 import jwt
@@ -15,6 +15,6 @@ def verificar_senha(senha: str, senha_hash: str) -> bool:
 
 
 def criar_token_acesso(usuario_id: int) -> str:
-    expira_em = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expires_minutes)
+    expira_em = datetime.now(UTC) + timedelta(minutes=settings.jwt_expires_minutes)
     payload = {"sub": str(usuario_id), "exp": expira_em}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
