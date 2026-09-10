@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = "mysql+pymysql://usuario:senha@localhost:3306/abrigo"
+    database_url: str = "postgresql+psycopg://usuario:senha@localhost:5432/abrigo"
     cors_origins: list[str] = ["http://localhost:4200"]
 
     jwt_secret_key: str = "altere-esta-chave-em-producao-para-algo-com-32-bytes-ou-mais"

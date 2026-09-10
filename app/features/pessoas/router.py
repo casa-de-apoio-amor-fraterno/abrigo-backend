@@ -40,3 +40,11 @@ def atualizar(pessoa_id: int, dados: PessoaUpdate, db: Session = Depends(get_db)
     if pessoa is None:
         raise HTTPException(status_code=404, detail="Pessoa não encontrada")
     return PessoaResponse.model_validate(service.atualizar(db, pessoa, dados))
+
+
+@router.delete("/{pessoa_id}", status_code=204)
+def inativar(pessoa_id: int, db: Session = Depends(get_db)) -> None:
+    pessoa = service.buscar(db, pessoa_id)
+    if pessoa is None:
+        raise HTTPException(status_code=404, detail="Pessoa não encontrada")
+    service.inativar(db, pessoa)

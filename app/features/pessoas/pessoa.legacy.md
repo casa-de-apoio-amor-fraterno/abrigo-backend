@@ -8,13 +8,23 @@ Origem (Delphi — abrigo-legacy):
   (`untFrmRelatorioPessoa`)
 - Banco: tabela `pessoa`
 
-## Campos reais (confirmados via `untFrmManutencaoPessoa.dfm`)
+## Campos reais (confirmados via `untFrmManutencaoPessoa.dfm` e o
+`CREATE TABLE` do dump de produção `sgf_abrigo`, 2026-09-09)
 
-`id_pessoa`, `nome`, `data_nascimento`, `rg`, `cpf`, `profissao`,
-`cartao_sus`, `endereco`, `ponto_referencia`, `telefone`, `id_estado`,
-`id_municipio`, `id_hospital`, `data_cadastro`, `acompanhamento_social`,
-`observacao`, `tipo` (ver decisão abaixo). Não existe coluna `ativo` —
-não há soft-delete de pessoa no legado.
+`id_pessoa` (int, PK), `id_estado`/`id_municipio`/`id_hospital` (int, FK),
+`nome` (varchar(60), obrigatório), `data_nascimento` (date, obrigatório),
+`rg` (varchar(15)), `cpf` (varchar(11)), `profissao` (varchar(60)),
+`cartao_sus` (varchar(60)), `endereco` (varchar(60)), `ponto_referencia`
+(varchar(60)), `telefone` (varchar(60)), `ativo` (varchar(3) 'Sim'/'Não',
+obrigatório — modelado como `boolean` no schema novo), `observacao` (text),
+`tipo` (varchar(12), obrigatório — ver decisão abaixo, não migrado),
+`acompanhamento_social` (text), `data_cadastro` (date, obrigatório).
+
+**Correção em relação a uma suposição anterior:** eu havia descartado a
+coluna `ativo` por ela não aparecer no formulário de manutenção
+(`untFrmManutencaoPessoa.dfm`) — o dump real de produção mostra que ela
+existe e é obrigatória. O model novo tem `ativo: bool`, e `GET /api/pessoas`
+só lista pessoas ativas por padrão.
 
 ## Decisão de design: removendo o campo `tipo`
 

@@ -49,6 +49,22 @@ def usuario_legado(db_session) -> Usuario:
 
 
 @pytest.fixture()
+def usuario_inativo(db_session) -> Usuario:
+    """Usuário desativado — não deve conseguir logar (correção em relação ao legado)."""
+    usuario = Usuario(
+        login="thiago",
+        nome="Thiago",
+        perfil="geral",
+        senha="plantonista",
+        ativo=False,
+    )
+    db_session.add(usuario)
+    db_session.commit()
+    db_session.refresh(usuario)
+    return usuario
+
+
+@pytest.fixture()
 def usuario_migrado(db_session) -> Usuario:
     """Usuário que já logou uma vez no sistema novo (senha_hash preenchida)."""
     usuario = Usuario(

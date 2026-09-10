@@ -1,11 +1,11 @@
-from datetime import date, datetime
+from datetime import date
 
 from pydantic import BaseModel, ConfigDict
 
 
 class PessoaBase(BaseModel):
     nome: str
-    data_nascimento: date | None = None
+    data_nascimento: date
     rg: str | None = None
     cpf: str | None = None
     profissao: str | None = None
@@ -36,11 +36,12 @@ class PessoaResumoResponse(BaseModel):
     nome: str
     cpf: str | None
     telefone: str | None
-    data_nascimento: date | None
+    data_nascimento: date
 
 
 class PessoaResponse(PessoaBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    data_cadastro: datetime | None = None
+    ativo: bool
+    data_cadastro: date

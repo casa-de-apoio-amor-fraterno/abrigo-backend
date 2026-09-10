@@ -1,3 +1,5 @@
+from datetime import date
+
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -6,7 +8,7 @@ from app.features.pessoas.schemas import PessoaCreate, PessoaUpdate
 
 
 def listar(db: Session, busca: str | None = None, skip: int = 0, take: int = 50) -> tuple[list[Pessoa], int]:
-    consulta = select(Pessoa)
+    consulta = select(Pessoa).where(Pessoa.ativo.is_(True))
     if busca:
         termo = f"%{busca}%"
         consulta = consulta.where(or_(Pessoa.nome.ilike(termo), Pessoa.cpf.ilike(termo)))
@@ -21,7 +23,7 @@ def buscar(db: Session, pessoa_id: int) -> Pessoa | None:
 
 
 def criar(db: Session, dados: PessoaCreate) -> Pessoa:
-    pessoa = Pessoa(**dados.model_dump())
+    pessoa = Pessoa(**dados.model_dump(), data_cadastro=date.today())
     db.add(pessoa)
     db.commit()
     db.refresh(pessoa)
@@ -34,3 +36,8 @@ def atualizar(db: Session, pessoa: Pessoa, dados: PessoaUpdate) -> Pessoa:
     db.commit()
     db.refresh(pessoa)
     return pessoa
+
+
+def inativar(db: Session, pessoa: Pessoa) -> None:
+    pessoa.ativo = False
+    db.commit()

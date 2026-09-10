@@ -1,3 +1,5 @@
+from datetime import date
+
 from app.features.pessoas.models import Pessoa
 
 
@@ -11,8 +13,18 @@ def test_listar_vazio(client):
 def test_listar_com_busca_por_nome(client, db_session):
     db_session.add_all(
         [
-            Pessoa(nome="Maria da Silva", cpf="11111111111"),
-            Pessoa(nome="João Souza", cpf="22222222222"),
+            Pessoa(
+                nome="Maria da Silva",
+                cpf="11111111111",
+                data_nascimento=date(1990, 1, 1),
+                data_cadastro=date.today(),
+            ),
+            Pessoa(
+                nome="João Souza",
+                cpf="22222222222",
+                data_nascimento=date(1985, 5, 5),
+                data_cadastro=date.today(),
+            ),
         ]
     )
     db_session.commit()
@@ -25,11 +37,37 @@ def test_listar_com_busca_por_nome(client, db_session):
     assert corpo["items"][0]["nome"] == "Maria da Silva"
 
 
+def test_listar_nao_traz_pessoa_inativa(client, db_session):
+    db_session.add(
+        Pessoa(
+            nome="Pessoa Inativa",
+            data_nascimento=date(1990, 1, 1),
+            data_cadastro=date.today(),
+            ativo=False,
+        )
+    )
+    db_session.commit()
+
+    resposta = client.get("/api/pessoas")
+
+    assert resposta.json()["total"] == 0
+
+
 def test_listar_com_busca_por_cpf(client, db_session):
     db_session.add_all(
         [
-            Pessoa(nome="Maria da Silva", cpf="11111111111"),
-            Pessoa(nome="João Souza", cpf="22222222222"),
+            Pessoa(
+                nome="Maria da Silva",
+                cpf="11111111111",
+                data_nascimento=date(1990, 1, 1),
+                data_cadastro=date.today(),
+            ),
+            Pessoa(
+                nome="João Souza",
+                cpf="22222222222",
+                data_nascimento=date(1985, 5, 5),
+                data_cadastro=date.today(),
+            ),
         ]
     )
     db_session.commit()
@@ -43,7 +81,12 @@ def test_listar_com_busca_por_cpf(client, db_session):
 def test_criar_e_buscar_pessoa(client):
     resposta = client.post(
         "/api/pessoas",
-        json={"nome": "Ana Paula", "cpf": "33333333333", "telefone": "11999999999"},
+        json={
+            "nome": "Ana Paula",
+            "cpf": "33333333333",
+            "telefone": "11999999999",
+            "data_nascimento": "1995-03-20",
+        },
     )
     assert resposta.status_code == 201
     pessoa_id = resposta.json()["id"]

@@ -32,3 +32,10 @@ def test_login_usuario_inexistente(client):
     resposta = client.post("/api/auth/login", json={"usuario": "ninguem", "senha": "123456"})
 
     assert resposta.status_code == 401
+
+
+def test_login_usuario_inativo_e_bloqueado(client, usuario_inativo):
+    """O legado nunca checava `ativo` no login — corrigido deliberadamente aqui."""
+    resposta = client.post("/api/auth/login", json={"usuario": "thiago", "senha": "plantonista"})
+
+    assert resposta.status_code == 401

@@ -9,7 +9,8 @@ dependencies = [
   "uvicorn[standard]>=0.32",
   "sqlalchemy>=2.0",
   "pydantic-settings>=2.6",
-  "pymysql>=1.1",
+  "psycopg[binary]>=3.2",
+  "pgvector>=0.3",
   "alembic>=1.14",
   "bcrypt>=4.2",
   "pyjwt>=2.9",
@@ -21,6 +22,9 @@ dev = [
   "httpx>=0.27",
   "ruff>=0.7",
 ]
+# Só usado pelos scripts de migração de dados (leitura do MySQL legado),
+# não pela aplicação em si — ver docs/migracao-postgres.md.
+migracao = ["pymysql>=1.1"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -33,5 +37,7 @@ include = ["app*"]
 line-length = 100
 
 [tool.ruff.lint]
-# B008: Depends(...) como valor default é o padrão idiomático do FastAPI.
-ignore = ["B008"]
+ignore = [
+  "B008",  # Depends(...) como valor default é o padrão idiomático do FastAPI.
+  "DTZ011",  # date.today() é correto para colunas `date` (sem timezone) — não é datetime.
+]

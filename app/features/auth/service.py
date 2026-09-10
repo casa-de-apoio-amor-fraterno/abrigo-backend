@@ -14,6 +14,11 @@ def autenticar(db: Session, login: str, senha: str) -> Usuario:
     if usuario is None:
         raise CredenciaisInvalidas
 
+    # Correção deliberada em relação ao legado: untFrmLogin.pas nunca checava
+    # `ativo` — um usuário desativado ainda conseguia logar. Ver usuario.legacy.md.
+    if not usuario.ativo:
+        raise CredenciaisInvalidas
+
     if usuario.senha_hash:
         if not verificar_senha(senha, usuario.senha_hash):
             raise CredenciaisInvalidas

@@ -12,11 +12,15 @@ Fraterno**.
 ## Contexto
 
 Este projeto substitui o **abrigo-legacy** ("Argos — Controle de
-Atendimento"), um sistema desktop em Delphi com banco MySQL usado hoje pela
-Casa de Apoio Amor Fraterno para controlar atendimentos, estadias,
+Atendimento"), um sistema desktop em Delphi com banco **MySQL 5.5** usado
+hoje pela Casa de Apoio Amor Fraterno para controlar atendimentos, estadias,
 voluntários, empréstimos de materiais e acompanhamento social de pessoas
 atendidas. Este backend expõe uma API REST consumida pelo
 [`abrigo-frontend`](https://github.com/casa-de-apoio-amor-fraterno/abrigo-frontend) (Angular).
+
+O banco de dados do sistema novo é **PostgreSQL + pgvector** (não MySQL) —
+ver [`docs/migracao-postgres.md`](docs/migracao-postgres.md) para a decisão
+completa e o plano de migração dos dados.
 
 **Atenção:** os dados e credenciais do sistema legado (banco MySQL de
 produção, arquivos `.mwb`, backups) **não fazem parte deste repositório** e
@@ -30,8 +34,8 @@ instituição.
 - SQLAlchemy 2.x (ORM)
 - Pydantic / pydantic-settings
 - Alembic (migrações de banco)
-- MySQL (via PyMySQL) — mesmo banco de dados do sistema legado, migrado
-  incrementalmente
+- PostgreSQL + [pgvector](https://github.com/pgvector/pgvector) (via psycopg) —
+  ver [`docs/migracao-postgres.md`](docs/migracao-postgres.md)
 - Pytest
 
 ## Estrutura
@@ -71,37 +75,34 @@ app/
 Cada feature nova deve seguir o mesmo padrão da feature `pessoas/` (que serve
 de referência) e documentar sua origem em um `.legacy.md`.
 
-## Banco de dados: migração incremental, não recriação
+## Banco de dados: PostgreSQL novo, populado por ETL do MySQL legado
 
-**O banco de produção existe desde 2013** (sistema legado Delphi/Argos) e
-tem dados reais de pessoas atendidas, estadias, voluntários etc. Isso muda
-como tratamos qualquer refactor de tabela:
+O MySQL 5.5 de produção (desde 2013) tem dados reais de pessoas atendidas,
+estadias, voluntários etc., mas o **destino** é um Postgres novo — os dados
+chegam lá via ETL (`pgloader`), não por migração in-place. Ver
+[`docs/migracao-postgres.md`](docs/migracao-postgres.md) para a decisão e o
+plano completo.
 
-- Migrações Alembic (`alembic/versions/`) devem ser **aditivas**
-  (`ALTER TABLE ... ADD COLUMN`, novas tabelas) sobre o schema existente —
-  nunca `DROP`/recriar uma tabela que já tem dado real sem antes migrar o
-  conteúdo para o novo formato.
-- `0001_baseline` é uma migração vazia que só marca o ponto de partida
-  (schema legado já existente); `0002_add_usuario_senha_hash` é o primeiro
-  exemplo real de migração aditiva.
-- Ao mapear uma tabela legada num `models.py` novo, usar os mesmos nomes de
-  coluna do banco de produção (`mapped_column("nome_da_coluna_legada", ...)`
-  quando o nome Python precisar ser diferente) em vez de inventar um schema
-  novo do zero.
-- Antes de rodar migrações contra o banco de produção pela primeira vez,
-  rodar `alembic stamp 0001_baseline` para o Alembic não tentar recriar
-  tabelas que já existem.
+Uma vez que o Postgres novo tiver dados reais, a regra de sempre passa a
+valer: migrações Alembic (`alembic/versions/`) devem ser **aditivas**
+(`ALTER TABLE ... ADD COLUMN`, novas tabelas) — nunca `DROP`/recriar uma
+tabela com dado real sem antes migrar o conteúdo para o novo formato.
+
+Ao mapear uma tabela do dump legado num `models.py` novo, usar os mesmos
+nomes de coluna reais (confirmados no dump, não só nos formulários Delphi —
+ver `pessoa.legacy.md` para um caso em que o formulário escondia uma coluna
+que existe de verdade) em vez de inventar um schema do zero.
 
 ### Exemplo aplicado: login e senha em texto plano
 
 O sistema legado guarda e compara a senha em **texto plano**
 (`SELECT ... FROM usuario WHERE login = :Login AND senha = :Senha`, ver
-`app/features/usuarios/usuario.legacy.md`). A migração não força reset de
-senha de ninguém: adicionamos a coluna `usuario.senha_hash` (nullable) e o
-login (`app/features/auth/service.py`) usa hash se existir, ou valida pelo
-texto plano legado e grava o hash na hora (lazy migration no primeiro login
-do sistema novo). Só depois que todo mundo tiver migrado é seguro dropar a
-coluna `senha` antiga.
+`app/features/usuarios/usuario.legacy.md`) e **nunca checa se o usuário está
+ativo** — um bug de segurança real, corrigido deliberadamente no sistema
+novo. A migração de senha não força reset de ninguém: o schema já nasce com
+`usuario.senha_hash`, e o login (`app/features/auth/service.py`) usa hash se
+existir, ou valida pelo texto plano legado e grava o hash na hora (lazy
+migration no primeiro login do sistema novo).
 
 ## Desenvolvimento
 
@@ -109,7 +110,7 @@ coluna `senha` antiga.
 python -m venv .venv
 .venv\Scripts\activate      # Windows
 pip install -r requirements-dev.txt
-copy .env.example .env      # ajustar DATABASE_URL para o MySQL local
+copy .env.example .env      # ajustar DATABASE_URL para o Postgres local
 
 uvicorn app.main:app --reload
 ```
