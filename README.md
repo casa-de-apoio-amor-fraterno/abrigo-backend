@@ -126,6 +126,7 @@ ruff check .  # lint
 ```bash
 alembic upgrade head                          # aplica migrações pendentes
 python -m app.scripts.criar_usuario admin senha123 "Administrador"  # cria/atualiza um usuário
+python -m app.scripts.hash_senhas_pendentes --confirmar  # hasheia em lote senha legada em texto plano
 ```
 
 ## Licença

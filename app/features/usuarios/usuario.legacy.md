@@ -40,6 +40,11 @@ sistema novo, uma migração futura pode dropar a coluna `senha` — só fazer
 isso depois de confirmar (via `SELECT`) que não sobrou nenhum registro com
 `senha_hash IS NULL AND ativo = true`.
 
+**Não espere o login de cada um para isso acontecer.** Logo após o ETL do
+MySQL legado, rode `python -m app.scripts.hash_senhas_pendentes --confirmar`
+para hashear em lote toda senha em texto plano de uma vez — não faz sentido
+deixar senha real em texto plano no banco só esperando cada pessoa logar.
+
 ## Tipo:
 - Suporte/infraestrutura (não é uma rotina de cadastro do domínio do
   atendimento, mas afeta login)

@@ -65,7 +65,13 @@ vazio, não existe "banco de produção já populado" nele ainda — então:
      banco.
 4. Validar contagens de linha e uma amostra de registros por tabela antes de
    considerar a migração concluída.
-5. Só depois de validado: repetir o processo contra o dump/produção de
+5. **Rodar `python -m app.scripts.hash_senhas_pendentes --confirmar` logo em
+   seguida.** O login já migra senha de texto plano pra hash sozinho, mas só
+   no primeiro acesso de cada usuário — sem esse passo, toda senha
+   importada do MySQL fica em texto plano no Postgres até cada pessoa
+   logar. Não faz sentido esperar: hashear tudo em lote assim que os dados
+   chegam elimina esse texto plano de uma vez.
+6. Só depois de validado: repetir o processo contra o dump/produção de
    verdade, num Postgres que vai ser o definitivo.
 
 ## Aviso de segurança
