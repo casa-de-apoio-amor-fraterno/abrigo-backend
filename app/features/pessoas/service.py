@@ -1,14 +1,18 @@
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.features.pessoas.models import Pessoa
 from app.features.pessoas.schemas import PessoaCreate, PessoaUpdate
 
 
-def listar(db: Session, skip: int = 0, take: int = 50) -> tuple[list[Pessoa], int]:
-    filtro = Pessoa.ativo.is_(True)
-    total = db.scalar(select(func.count()).select_from(Pessoa).where(filtro)) or 0
-    itens = db.scalars(select(Pessoa).where(filtro).offset(skip).limit(take)).all()
+def listar(db: Session, busca: str | None = None, skip: int = 0, take: int = 50) -> tuple[list[Pessoa], int]:
+    consulta = select(Pessoa)
+    if busca:
+        termo = f"%{busca}%"
+        consulta = consulta.where(or_(Pessoa.nome.ilike(termo), Pessoa.cpf.ilike(termo)))
+
+    total = db.scalar(select(func.count()).select_from(consulta.subquery())) or 0
+    itens = db.scalars(consulta.order_by(Pessoa.nome).offset(skip).limit(take)).all()
     return list(itens), total
 
 
@@ -30,8 +34,3 @@ def atualizar(db: Session, pessoa: Pessoa, dados: PessoaUpdate) -> Pessoa:
     db.commit()
     db.refresh(pessoa)
     return pessoa
-
-
-def inativar(db: Session, pessoa: Pessoa) -> None:
-    pessoa.ativo = False
-    db.commit()
