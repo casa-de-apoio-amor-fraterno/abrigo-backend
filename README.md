@@ -66,10 +66,42 @@ app/
 | `Acompanhamento` | `acompanhamentos/` |
 | `Hospital` / `Municipio` / `Estado` | `cadastros_base/` |
 | `Quarto` / `Disponibilidade` | `quartos/` |
-| `Usuario` | `usuarios/` |
+| `Usuario` | `usuarios/` (+ `auth/` para login) |
 
 Cada feature nova deve seguir o mesmo padrão da feature `pessoas/` (que serve
 de referência) e documentar sua origem em um `.legacy.md`.
+
+## Banco de dados: migração incremental, não recriação
+
+**O banco de produção existe desde 2013** (sistema legado Delphi/Argos) e
+tem dados reais de pessoas atendidas, estadias, voluntários etc. Isso muda
+como tratamos qualquer refactor de tabela:
+
+- Migrações Alembic (`alembic/versions/`) devem ser **aditivas**
+  (`ALTER TABLE ... ADD COLUMN`, novas tabelas) sobre o schema existente —
+  nunca `DROP`/recriar uma tabela que já tem dado real sem antes migrar o
+  conteúdo para o novo formato.
+- `0001_baseline` é uma migração vazia que só marca o ponto de partida
+  (schema legado já existente); `0002_add_usuario_senha_hash` é o primeiro
+  exemplo real de migração aditiva.
+- Ao mapear uma tabela legada num `models.py` novo, usar os mesmos nomes de
+  coluna do banco de produção (`mapped_column("nome_da_coluna_legada", ...)`
+  quando o nome Python precisar ser diferente) em vez de inventar um schema
+  novo do zero.
+- Antes de rodar migrações contra o banco de produção pela primeira vez,
+  rodar `alembic stamp 0001_baseline` para o Alembic não tentar recriar
+  tabelas que já existem.
+
+### Exemplo aplicado: login e senha em texto plano
+
+O sistema legado guarda e compara a senha em **texto plano**
+(`SELECT ... FROM usuario WHERE login = :Login AND senha = :Senha`, ver
+`app/features/usuarios/usuario.legacy.md`). A migração não força reset de
+senha de ninguém: adicionamos a coluna `usuario.senha_hash` (nullable) e o
+login (`app/features/auth/service.py`) usa hash se existir, ou valida pelo
+texto plano legado e grava o hash na hora (lazy migration no primeiro login
+do sistema novo). Só depois que todo mundo tiver migrado é seguro dropar a
+coluna `senha` antiga.
 
 ## Desenvolvimento
 
@@ -88,6 +120,11 @@ A API sobe em `http://localhost:8000`; documentação automática em
 ```bash
 pytest      # testes
 ruff check .  # lint
+```
+
+```bash
+alembic upgrade head                          # aplica migrações pendentes
+python -m app.scripts.criar_usuario admin senha123 "Administrador"  # cria/atualiza um usuário
 ```
 
 ## Licença
