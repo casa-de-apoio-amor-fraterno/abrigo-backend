@@ -20,14 +20,32 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "0001_estrutura_inicial"
+revision = "0001"
 down_revision = None
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    # `pgvector` ainda não é usado em nenhuma coluna (busca semântica é
+    # trabalho futuro — ver docs/migracao-postgres.md) e não tem pacote
+    # binário pronto pra Windows, exigindo compilar do zero (Visual Studio
+    # + build tools). Criar a extensão só quando ela estiver disponível no
+    # servidor, sem travar o ambiente de quem ainda não a instalou —
+    # volta a ser obrigatória quando a busca semântica for implementada de
+    # verdade.
+    bind = op.get_bind()
+    extensao_disponivel = bind.execute(
+        sa.text("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'")
+    ).scalar()
+    if extensao_disponivel:
+        op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    else:
+        print(
+            "AVISO: extensão 'vector' (pgvector) não disponível neste servidor — "
+            "pulando. Não é usada em nenhuma coluna ainda; instale pgvector antes "
+            "de implementar busca semântica."
+        )
 
     op.create_table(
         "usuario",

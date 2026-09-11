@@ -95,7 +95,7 @@ def test_transformar_usuario_mantem_senha_texto_plano():
         "id_usuario": 1,
         "login": "joana",
         "nome": "Joana",
-        "perfil": "assistente_social",
+        "perfil": "Assistente Social",
         "ativo": "Sim",
         "senha": "123456",
     }

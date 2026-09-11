@@ -63,6 +63,27 @@ def _ler_tabela(conexao_origem, tabela: str) -> list[dict]:
     return [dict(linha._mapping) for linha in resultado]
 
 
+def _resincronizar_sequencia(sessao_destino: Session, modelo_destino: type[Base]) -> None:
+    """Depois de inserir IDs explícitos (vindos do legado) numa tabela com
+    PK `serial`/`identity`, a sequence do Postgres **não avança sozinha**
+    (diferente do `AUTO_INCREMENT` do MySQL) — sem isso, o próximo `INSERT`
+    sem `id` explícito (feito pela própria aplicação, ex.: `POST
+    /api/pessoas`) colide com um id já existente. Não faz nada em bancos
+    que não sejam Postgres (ex.: SQLite usado em testes)."""
+    if sessao_destino.bind.dialect.name != "postgresql":
+        return
+
+    tabela = modelo_destino.__table__
+    coluna_pk = next(iter(tabela.primary_key.columns)).name
+    sessao_destino.execute(
+        text(
+            f"SELECT setval(pg_get_serial_sequence('{tabela.name}', '{coluna_pk}'), "
+            f"COALESCE((SELECT MAX({coluna_pk}) FROM {tabela.name}), 1))"
+        )
+    )
+    sessao_destino.commit()
+
+
 def _carregar_tabela(
     conexao_origem,
     sessao_destino: Session,
@@ -79,6 +100,7 @@ def _carregar_tabela(
     if confirmar and transformadas:
         sessao_destino.bulk_insert_mappings(modelo_destino, transformadas)
         sessao_destino.commit()
+        _resincronizar_sequencia(sessao_destino, modelo_destino)
 
     return len(transformadas)
 
@@ -129,8 +151,12 @@ def _reconciliar_acompanhamento(
     if confirmar and resultado.reconciliados:
         # Sem `id` explícito: são linhas sintéticas, não existem em
         # `estadia_acompanhante` no legado — deixa o Postgres atribuir o id.
+        # A sequence já foi resincronizada em _carregar_tabela (linhas
+        # originais de estadia_acompanhante vieram com id explícito), então
+        # esses `INSERT`s sem id pegam o próximo valor livre corretamente.
         sessao_destino.bulk_insert_mappings(EstadiaAcompanhante, resultado.reconciliados)
         sessao_destino.commit()
+        _resincronizar_sequencia(sessao_destino, EstadiaAcompanhante)
 
 
 TABELAS_SIMPLES: list[tuple[str, Callable[[dict], dict], type[Base]]] = [

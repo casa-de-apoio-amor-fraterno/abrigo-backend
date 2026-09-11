@@ -160,9 +160,42 @@ versionada, em ambiente local/controlado.
       **O dump local (`C:\repos\caaf\sgf_abrigo 20260909 1501.sql`) foi
       corrigido** pra usar `sgf_abrigo_import` no lugar de `sgf` — nunca
       mais deve colidir com outro banco.
-      **Ainda falta:** rodar contra um Postgres de verdade (só SQLite foi
-      testado aqui) antes de considerar o ETL pronto pra produção — os
-      tipos usados são todos padrão SQL então não é esperada diferença de
-      comportamento, mas não foi validado.
-- [ ] Habilitar `pgvector` de fato numa coluna (`vector(N)`) quando a
-      funcionalidade de busca semântica for implementada.
+- [x] **Validado contra Postgres real (2026-09-11).** PostgreSQL 17
+      instalado localmente (`winget install PostgreSQL.PostgreSQL.17`).
+      `alembic upgrade head` e o ETL completo (14 tabelas, mesmas
+      contagens da rodada com SQLite) rodaram limpos contra Postgres de
+      verdade. Esse teste revelou **dois bugs que o SQLite não pegava**:
+      1. **`alembic_version.version_num` é `VARCHAR(32)`** por padrão no
+         Alembic, sem parâmetro de configuração pra aumentar nesta versão
+         (1.19) — os IDs de revisão descritivos deste projeto (ex.:
+         `"0008_avaliacao_social_composicao_familiar"`, 42 caracteres)
+         estouravam isso e travavam `alembic upgrade` a partir da primeira
+         revisão com nome longo (`StringDataRightTruncation`). Corrigido
+         encurtando todos os IDs de revisão pro prefixo numérico só
+         (`"0001"` .. `"0009"` — o nome descritivo continua no nome do
+         arquivo `.py` e no docstring/mensagem da revisão).
+      2. **Sequences do Postgres não avançam sozinhas** depois de um
+         `INSERT` com `id` explícito (diferente do `AUTO_INCREMENT` do
+         MySQL) — carregar `estadia_acompanhante` com os 617 ids reais do
+         legado e depois inserir as 7 linhas reconciliadas de
+         `acompanhamento` (sem `id`, pra o banco atribuir) colidiu com
+         `id_estadia_acompanhante=1` já existente. `app/scripts/
+         etl_migracao.py` ganhou `_resincronizar_sequencia()` — roda
+         `setval(pg_get_serial_sequence(...), MAX(id))` depois de cada
+         tabela carregada (no-op em bancos que não são Postgres, ex.:
+         SQLite nos testes). Sem isso, a primeira vez que a própria
+         aplicação criar um registro novo (`POST /api/pessoas`, etc.) após
+         o ETL colidiria com um id do legado.
+      `pgvector` **não foi instalado** — não tem pacote pronto pra Windows,
+      exigiria compilar com o workload C++ do Visual Studio (o ambiente
+      tinha o VS instalado mas sem esse workload, e o instalador do VS
+      recusa modo silencioso sem elevação UAC interativa, que esta sessão
+      não tem como confirmar). Como `pgvector` ainda não é usado em
+      nenhuma coluna, `alembic/versions/0001_estrutura_inicial.py` foi
+      ajustado pra criar a extensão só se ela já estiver disponível no
+      servidor (`SELECT 1 FROM pg_available_extensions WHERE name =
+      'vector'`), sem travar quem ainda não a instalou.
+- [ ] Instalar `pgvector` de fato (precisa do workload "Desktop
+      development with C++" do Visual Studio + compilar) e habilitá-lo
+      numa coluna (`vector(N)`) quando a funcionalidade de busca semântica
+      for implementada.
