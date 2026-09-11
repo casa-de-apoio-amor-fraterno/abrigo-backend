@@ -36,6 +36,6 @@ def autenticar(db: Session, login: str, senha: str) -> Usuario:
     return usuario
 
 
-def gerar_sessao(usuario: Usuario) -> tuple[str, str]:
+def gerar_sessao(usuario: Usuario) -> tuple[str, str, str, int]:
     token = criar_token_acesso(usuario.id)
-    return usuario.nome, token
+    return usuario.nome, token, usuario.perfil, usuario.id

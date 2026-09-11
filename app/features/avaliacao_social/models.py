@@ -11,8 +11,10 @@ class AvaliacaoSocial(Base):
     produção `sgf_abrigo`, MySQL 5.5 — ver docs/migracao-postgres.md).
 
     Dados sensíveis (renda, diagnóstico médico, benefícios sociais) — só
-    acessível a `Usuario.perfil == 'assistente_social'`, regra nova (o
-    legado não restringia acesso por perfil). Ver `avaliacao_social.legacy.md`.
+    acessível a `Usuario.perfil == 'Assistente Social'` (valor real gravado
+    pelo legado, verificado no dump de produção — não é o snake_case usado
+    inicialmente), regra nova (o legado não restringia acesso por perfil).
+    Ver `avaliacao_social.legacy.md`.
 
     `casos_cancer_familia` é `text` no legado, não `varchar(3)` como os
     outros campos Sim/Não desta tabela — mantido como `String`, não

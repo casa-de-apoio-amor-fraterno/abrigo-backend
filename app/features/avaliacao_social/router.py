@@ -10,7 +10,7 @@ from app.features.avaliacao_social.schemas import (
     AvaliacaoSocialUpdate,
 )
 
-router = APIRouter(dependencies=[Depends(exigir_perfil("assistente_social"))])
+router = APIRouter(dependencies=[Depends(exigir_perfil("Assistente Social"))])
 
 
 @router.get("", response_model=list[AvaliacaoSocialResponse])

@@ -41,7 +41,7 @@ def client(db_session):
 @pytest.fixture()
 def usuario_legado(db_session) -> Usuario:
     """Usuário com senha em texto plano, como no sistema legado."""
-    usuario = Usuario(login="joana", nome="Joana Assistente Social", perfil="assistente_social", senha="123456")
+    usuario = Usuario(login="joana", nome="Joana Assistente Social", perfil="Assistente Social", senha="123456")
     db_session.add(usuario)
     db_session.commit()
     db_session.refresh(usuario)
@@ -54,7 +54,7 @@ def usuario_inativo(db_session) -> Usuario:
     usuario = Usuario(
         login="thiago",
         nome="Thiago",
-        perfil="geral",
+        perfil="Geral",
         senha="plantonista",
         ativo=False,
     )
@@ -70,7 +70,7 @@ def usuario_migrado(db_session) -> Usuario:
     usuario = Usuario(
         login="carlos",
         nome="Carlos Coordenador",
-        perfil="coordenador",
+        perfil="Geral",
         senha=None,
         senha_hash=hash_senha("abc12345"),
     )

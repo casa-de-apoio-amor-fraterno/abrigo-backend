@@ -15,5 +15,5 @@ def login(dados: LoginRequest, db: Session = Depends(get_db)) -> SessaoResponse:
     except service.CredenciaisInvalidas as exc:
         raise HTTPException(status_code=401, detail="Usuário ou senha inválidos") from exc
 
-    nome, token = service.gerar_sessao(usuario)
-    return SessaoResponse(nome=nome, token=token)
+    nome, token, perfil, usuario_id = service.gerar_sessao(usuario)
+    return SessaoResponse(nome=nome, token=token, perfil=perfil, usuario_id=usuario_id)

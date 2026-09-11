@@ -10,7 +10,7 @@ from app.features.composicao_familiar.schemas import (
     ComposicaoFamiliarUpdate,
 )
 
-router = APIRouter(dependencies=[Depends(exigir_perfil("assistente_social"))])
+router = APIRouter(dependencies=[Depends(exigir_perfil("Assistente Social"))])
 
 
 @router.get("", response_model=list[ComposicaoFamiliarResponse])

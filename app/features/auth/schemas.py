@@ -9,3 +9,5 @@ class LoginRequest(BaseModel):
 class SessaoResponse(BaseModel):
     nome: str
     token: str
+    perfil: str
+    usuario_id: int
