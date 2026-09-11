@@ -39,14 +39,32 @@ vazio, não existe "banco de produção já populado" nele ainda — então:
   COLUMN`, nunca `DROP`/recriar tabela com dado real sem migrar o conteúdo
   antes).
 
+## Ferramenta do ETL: Python, não pgloader (decisão 2026-09-10)
+
+O plano original previa usar [`pgloader`](https://pgloader.io/). **Trocado
+por um script Python** (`app/scripts/etl_migracao.py` +
+`app/scripts/etl/transformacoes.py` + `app/scripts/etl/reconciliacao.py`):
+o ambiente onde o script foi desenvolvido não tinha `pgloader`, cliente
+`mysql` nem `docker` disponíveis — impossível instalar ou testar um script
+`pgloader` ali. Como o projeto já é Python (SQLAlchemy), e a lógica de
+transformação por tabela é não-trivial (datas zeradas, Sim/Não → boolean
+em mais de dez colunas diferentes, reconciliação de `acompanhamento`),
+escrever isso em Python puro permite testar cada regra com `pytest`
+(`tests/test_etl_transformacoes.py`, `tests/test_etl_reconciliacao.py`) sem
+precisar de MySQL/Postgres reais rodando — o que não seria possível
+validar numa DSL do `pgloader`. Usa `pymysql` (já em
+`requirements-dev.txt`) pra ler o MySQL de origem e o `SessionLocal` da
+própria aplicação pra escrever no Postgres alvo.
+
 ## Plano de ETL (MySQL → Postgres)
 
 1. **Nunca rodar contra o dump/produção diretamente na primeira tentativa.**
    Restaurar o dump `sgf_abrigo` num MySQL local descartável primeiro.
 2. Rodar `alembic upgrade head` no Postgres alvo (cria o schema vazio).
-3. Usar [`pgloader`](https://pgloader.io/) para copiar os dados do MySQL
-   local pro Postgres, com um script de mapeamento explícito por tabela (não
-   um `pgloader mysql://... postgresql://...` genérico) — precisa tratar:
+3. Rodar `python -m app.scripts.etl_migracao --mysql-url
+   mysql+pymysql://usuario:senha@localhost/sgf_abrigo` (sem `--confirmar`
+   primeiro — modo dry-run, só mostra quantas linhas cada tabela teria).
+   O script já trata, por tabela (ver `app/scripts/etl/transformacoes.py`):
    - **Datas zero do MySQL**: `data_cadastro date NOT NULL DEFAULT
      '0000-00-00'` — `0000-00-00` não existe no Postgres. Mapear pra `NULL`
      quando o valor for zero, ou pra uma data sentinela documentada.
@@ -54,24 +72,40 @@ vazio, não existe "banco de produção já populado" nele ainda — então:
      `true`, qualquer outra coisa → `false`).
    - **`pessoa.tipo`** (`varchar(12)`, 'Paciente'/'Acompanhante'/'Emprestimo')
      **não é copiado pra `pessoa`** — não existe mais nesse schema (ver
-     `app/features/pessoas/pessoa.legacy.md`). Em vez disso, o valor de
-     `pessoa.tipo` de cada registro é usado para popular
-     `estadia.tipo_pessoa` na migração da tabela `estadia` (quando essa
-     feature for implementada) — reconciliando com a coluna
-     `estadia.tipo_pessoa` que o próprio legado já tinha.
+     `app/features/pessoas/pessoa.legacy.md`). Correção em relação ao plano
+     original deste documento: **não** é usado pra popular
+     `estadia.tipo_pessoa` — essa coluna já existe como campo próprio no
+     `estadia` legado (confirmado no dump, ver
+     `app/features/estadias/estadia.legacy.md`), então o ETL copia
+     `estadia.tipo_pessoa` direto da tabela `estadia`, sem precisar de
+     `pessoa.tipo`. `pessoa.tipo` é simplesmente descartado.
+   - **`acompanhamento` → `estadia_acompanhante`**: `acompanhamento` (sem FK
+     real, sem data) é reconciliada automaticamente só quando o paciente
+     teve exatamente uma `estadia` (caso inambíguo); os demais casos (0 ou
+     2+ estadias pro paciente) ficam listados como pendentes de revisão
+     manual na saída do script, não são inseridos por heurística (ver
+     `app/scripts/etl/reconciliacao.py` e achado 1 de `docs/atividades.md`).
+   - **`ativo` como `varchar(3)` ('Sim'/'Não')** → `boolean` (`'Sim'` →
+     `true`, qualquer outra coisa → `false`) em toda tabela que tem essa
+     coluna (`hospital`, `quarto`, `usuario`, `pessoa`, `voluntario`,
+     `material`, `estadia`, `emprestimo` e os campos Sim/Não de
+     `avaliacao_social` — exceto `casos_cancer_familia`, que é `text` no
+     legado, não `varchar(3)`, e fica como string).
    - **`usuario.senha`** migra como está (texto plano) — o backend já trata
      isso (`app/features/auth/service.py`, migração "preguiçosa" pro hash no
      primeiro login). Não expor esse texto plano em lugar nenhum além do
      banco.
 4. Validar contagens de linha e uma amostra de registros por tabela antes de
-   considerar a migração concluída.
-5. **Rodar `python -m app.scripts.hash_senhas_pendentes --confirmar` logo em
+   considerar a migração concluída (o script imprime a contagem por tabela
+   mesmo em dry-run).
+5. Rodar de novo com `--confirmar` pra gravar de verdade.
+6. **Rodar `python -m app.scripts.hash_senhas_pendentes --confirmar` logo em
    seguida.** O login já migra senha de texto plano pra hash sozinho, mas só
    no primeiro acesso de cada usuário — sem esse passo, toda senha
    importada do MySQL fica em texto plano no Postgres até cada pessoa
    logar. Não faz sentido esperar: hashear tudo em lote assim que os dados
    chegam elimina esse texto plano de uma vez.
-6. Só depois de validado: repetir o processo contra o dump/produção de
+7. Só depois de validado: repetir o processo contra o dump/produção de
    verdade, num Postgres que vai ser o definitivo.
 
 ## Aviso de segurança
@@ -87,8 +121,21 @@ versionada, em ambiente local/controlado.
 
 - [x] Backend configurado para Postgres (`psycopg`) + `pgvector` instalado
       como dependência.
-- [x] `alembic/versions/0001_estrutura_inicial.py` cria `usuario` e `pessoa`.
-- [ ] Script de ETL (`pgloader` + mapeamentos) — a fazer.
-- [ ] Rodar a migração contra uma cópia de teste do dump antes de produção.
+- [x] Migrações Alembic (`0001` a `0008`) criam todas as 16 tabelas do
+      schema novo (todas as features do backlog de `docs/atividades.md`,
+      exceto `disponibilidade`/`procedimentos`, deixadas de fora por
+      decisão — ver esse documento).
+- [x] Script de ETL (`app/scripts/etl_migracao.py` — Python, não pgloader,
+      ver decisão acima) com transformações testadas
+      (`tests/test_etl_transformacoes.py`,
+      `tests/test_etl_reconciliacao.py`, 16 testes).
+- [ ] Rodar a migração contra uma cópia de teste do dump antes de produção
+      — **não executado ainda**: o script não pôde ser testado contra um
+      MySQL/Postgres reais no ambiente onde foi escrito (sem `mysql`
+      client, `pgloader` nem `docker` disponíveis). Passo obrigatório antes
+      de rodar contra produção: restaurar o dump `sgf_abrigo` num MySQL
+      local descartável, rodar `alembic upgrade head` num Postgres de
+      teste, rodar o script sem `--confirmar` primeiro, depois com
+      `--confirmar`, e validar contagens/amostras por tabela.
 - [ ] Habilitar `pgvector` de fato numa coluna (`vector(N)`) quando a
       funcionalidade de busca semântica for implementada.

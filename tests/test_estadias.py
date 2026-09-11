@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from app.features.estadias.models import Estadia, SituacaoEstadia, TipoPessoaEstadia
+from app.features.estadias.models import Estadia, SituacaoEstadia
 from app.features.pessoas.models import Pessoa
 from app.features.quartos.models import Quarto
 from app.features.usuarios.models import Usuario

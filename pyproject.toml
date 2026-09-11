@@ -40,4 +40,5 @@ line-length = 100
 ignore = [
   "B008",  # Depends(...) como valor default é o padrão idiomático do FastAPI.
   "DTZ011",  # date.today() é correto para colunas `date` (sem timezone) — não é datetime.
+  "DTZ001",  # datetime() naive é correto aqui: as colunas datetime do MySQL legado não têm timezone.
 ]

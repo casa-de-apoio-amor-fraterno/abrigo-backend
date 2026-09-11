@@ -16,20 +16,20 @@ aproximado de linhas já inseridas, não a contagem exata).
 | --- | --- | --- | --- |
 | `pessoa` | ~5.327 | `estado`, `municipio`, `hospital` | ✅ Implementado (`app/features/pessoas/`) |
 | `usuario` | 8 | — | ✅ Implementado (`app/features/usuarios/` + `auth/`) |
-| `estado` | 27 (fixo, lista de UFs) | — | ❌ Não implementado |
-| `municipio` | ~5.570 (fixo, IBGE) | `estado` | ❌ Não implementado |
-| `hospital` | 14 | — | ❌ Não implementado |
-| `quarto` | 25 | — | ❌ Não implementado |
-| `voluntario` | 40 | — | ❌ Não implementado (placeholder no frontend) |
+| `estado` | 27 (fixo, lista de UFs) | — | ✅ Implementado (`app/features/estados/`) |
+| `municipio` | ~5.570 (fixo, IBGE) | `estado` | ✅ Implementado (`app/features/municipios/`) |
+| `hospital` | 14 | — | ✅ Implementado (`app/features/hospitais/`) |
+| `quarto` | 25 | — | ✅ Implementado (`app/features/quartos/`) |
+| `voluntario` | 40 | — | ✅ Implementado (`app/features/voluntarios/`) |
 | `disponibilidade` | **0 linhas** | `voluntario` | ❌ Não implementado — feature parece não usada |
-| `estadia` | ~4.434 | `pessoa`, `quarto`, `usuario` | ❌ Não implementado (placeholder no frontend) |
-| `estadia_acompanhante` | ~648 | `estadia`, `pessoa` | ❌ Não implementado — ver decisão abaixo |
-| `acompanhamento` | 41 | `pessoa` (id_paciente/id_acompanhante — **sem FK de verdade**, só índice) | ❌ Não implementado — ver decisão abaixo |
-| `avaliacao_social` | ~1.312 | `pessoa` | ❌ Não implementado (sub-rotina restrita à assistente social) |
-| `composicao_familiar` | ~3.612 | `pessoa` | ❌ Não implementado (sub-rotina restrita à assistente social) |
-| `material` | ~1.710 | — | ❌ Não implementado (placeholder no frontend) |
-| `emprestimo` | ~2.583 | `pessoa`, `usuario` | ❌ Não implementado (placeholder no frontend) |
-| `emprestimo_item` | ~3.591 | `emprestimo`, `material` | ❌ Não implementado |
+| `estadia` | ~4.434 | `pessoa`, `quarto`, `usuario` | ✅ Implementado (`app/features/estadias/`) |
+| `estadia_acompanhante` | ~648 | `estadia`, `pessoa` | ✅ Implementado (mesma feature — ver decisão abaixo) |
+| `acompanhamento` | 41 | `pessoa` (id_paciente/id_acompanhante — **sem FK de verdade**, só índice) | ❌ Não vira tabela própria — dados reconciliados na ETL (ver decisão abaixo) |
+| `avaliacao_social` | ~1.312 | `pessoa` | ✅ Implementado (`app/features/avaliacao_social/`, acesso restrito) |
+| `composicao_familiar` | ~3.612 | `pessoa` | ✅ Implementado (`app/features/composicao_familiar/`, acesso restrito) |
+| `material` | ~1.710 | — | ✅ Implementado (`app/features/materiais/`) |
+| `emprestimo` | ~2.583 | `pessoa`, `usuario` | ✅ Implementado (`app/features/emprestimos/`) |
+| `emprestimo_item` | ~3.591 | `emprestimo`, `material` | ✅ Implementado (mesma feature, sub-recurso) |
 | `procedimento` | **0 linhas** | — | ❌ Não implementado — feature parece não usada |
 | `procedimento_realizado` | **0 linhas** | `procedimento`, `pessoa`, `voluntario` | ❌ Não implementado — feature parece não usada |
 
@@ -76,29 +76,35 @@ procedimento
 
 ## Decisões / achados que precisam de atenção antes de implementar
 
-1. **`acompanhamento` × `estadia_acompanhante` — duas tabelas para o mesmo
-   conceito.** `acompanhamento` (mais antiga, 41 linhas, sem FK de verdade —
-   só índice) parece ter sido substituída por `estadia_acompanhante` (648
-   linhas, FK real pra `estadia` e `pessoa`, contextual por estadia — é
-   exatamente o padrão relacional correto que já tínhamos decidido adotar
-   ao remover `pessoa.tipo`, ver `pessoa.legacy.md`). **Decisão sugerida:**
-   migrar dados de `acompanhamento` pra dentro do conceito de
-   `estadia_acompanhante` na ETL (cruzando com a `estadia` correspondente de
-   cada paciente) e não trazer `acompanhamento` como tabela própria no
-   schema novo. Precisa validação: `acompanhamento` tem casos que não têm
-   uma `estadia` correspondente?
+1. ✅ **`acompanhamento` × `estadia_acompanhante` — duas tabelas para o
+   mesmo conceito.** `acompanhamento` (mais antiga, 41 linhas, sem FK de
+   verdade — só índice) parece ter sido substituída por
+   `estadia_acompanhante` (648 linhas, FK real pra `estadia` e `pessoa`,
+   contextual por estadia — é exatamente o padrão relacional correto que já
+   tínhamos decidido adotar ao remover `pessoa.tipo`, ver
+   `pessoa.legacy.md`). **Decisão confirmada (2026-09-10):** migrar dados de
+   `acompanhamento` pra dentro do conceito de `estadia_acompanhante` na ETL
+   (cruzando com a `estadia` correspondente de cada paciente) e não trazer
+   `acompanhamento` como tabela própria no schema novo — só
+   `EstadiaAcompanhante` foi modelada. Ainda falta validar na ETL:
+   `acompanhamento` tem casos que não têm uma `estadia` correspondente?
 2. **`disponibilidade`, `procedimento` e `procedimento_realizado` estão
    vazias (0 linhas) em produção.** Ou a funcionalidade nunca foi usada de
    fato, ou os dados foram limpos em algum momento. **Decisão sugerida:**
    perguntar à instituição se essas funcionalidades (disponibilidade de
    voluntário, procedimentos realizados) são usadas hoje na prática antes
    de investir tempo implementando — pode ser que não valha a pena migrar.
-3. **`pessoa.tipo`, `estadia.tipo_pessoa` e `estadia_acompanhante` se
-   sobrepõem.** Já decidido (`pessoa.legacy.md`) que `tipo` não migra para
-   `Pessoa`. Falta decidir se `Estadia.tipo_pessoa` continua como campo
-   próprio ou se é totalmente substituído pela existência (ou não) de uma
-   linha em `estadia_acompanhante` associada — a segunda opção é mais
-   normalizada e evita o campo redundante.
+3. ✅ **`pessoa.tipo`, `estadia.tipo_pessoa` e `estadia_acompanhante` —
+   suposição de sobreposição estava errada.** Já decidido
+   (`pessoa.legacy.md`) que `tipo` não migra para `Pessoa`. **Decisão
+   confirmada (2026-09-10), ver `estadia.legacy.md`:** verificação contra a
+   tela real do legado (`untFrmManutencaoEstadia.dfm`) mostrou que
+   `tipo_pessoa` e `estadia_acompanhante` são usados **simultaneamente** na
+   mesma tela — não são o mesmo conceito. `tipo_pessoa` é o papel da pessoa
+   que ocupa aquele leito (aquela linha de `estadia`); `estadia_acompanhante`
+   é gente que acompanha sem necessariamente ter leito próprio. **Os dois
+   foram mantidos** (`tipo_pessoa` como enum de verdade em `Estadia`,
+   `EstadiaAcompanhante` como tabela relacionada própria).
 4. **`material.ativo`, `estadia.ativo`, `hospital.ativo`, `quarto.ativo`,
    `voluntario.ativo`, `procedimento.ativo` seguem o mesmo padrão
    `varchar(3)` 'Sim'/'Não'** que já corrigimos em `pessoa`/`usuario` —
@@ -113,26 +119,96 @@ procedimento
 Ordem baseada em dependência de FK (não dá pra implementar `estadia` sem
 `quarto`, por exemplo) e volume/uso real dos dados.
 
-1. **`estados` / `municipios` / `hospitais`** — tabelas de apoio (FK de
+1. ✅ **`estados` / `municipios` / `hospitais`** — tabelas de apoio (FK de
    `pessoa`), pequenas e sem regra de negócio própria (só CRUD/consulta
    simples, `municipio` provavelmente só populado uma vez via seed, não tem
    tela de cadastro no legado). Pré-requisito pra exibir nome do
    estado/município/hospital na tela de pessoa em vez do ID cru.
-2. **`quartos`** — pré-requisito de `estadias`. Poucos registros (25),
-   CRUD simples.
-3. **`estadias`** — feature central do abrigo (~4.434 registros). Já tem
-   rota placeholder no frontend. Envolve decidir o ponto 3 acima
-   (`tipo_pessoa` vs `estadia_acompanhante`) antes de desenhar o schema novo.
-4. **`voluntarios`** — CRUD simples (40 registros), sem dependências.
-5. **`materiais`** — CRUD simples (~1.710 registros), pré-requisito de
-   `emprestimos`.
-6. **`emprestimos`** (+ `emprestimo_item`) — depende de `pessoas`,
-   `usuarios` e `materiais`.
-7. **`avaliacao_social` / `composicao_familiar`** — sub-rotinas de `pessoa`
-   com controle de acesso (só assistente social, regra que precisa ser
-   criada do zero — o legado não implementava essa restrição).
+   **Implementado (2026-09-10):** endpoints de leitura (`GET` lista/detalhe)
+   em `app/features/estados/`, `app/features/hospitais/`,
+   `app/features/municipios/`; migração Alembic
+   `0002_estados_municipios_hospitais` cria as tabelas e adiciona FK real em
+   `pessoa.id_estado/id_municipio/id_hospital` (antes inteiros soltos).
+   Serviços de apoio no frontend (`dto/mapper/model/service`, sem página de
+   listagem própria — não estão no menu). Dados reais (27 estados, ~5.570
+   municípios, 13 hospitais) ainda não carregados — entram via ETL
+   (`docs/migracao-postgres.md`), não por seed nem pela migração Alembic.
+2. ✅ **`quartos`** — pré-requisito de `estadias`. Poucos registros (25),
+   CRUD simples. **Implementado (2026-09-10):** CRUD completo (diferente de
+   `estados`/`hospitais`/`municipios` — o legado tem tela de manutenção
+   própria) em `app/features/quartos/`; migração
+   `alembic/versions/0003_quartos.py`. `numero`/`leito` modelados como
+   `String`, não `Integer` — o dado real tem valores não numéricos (ex.:
+   "2 leitos", "Sala de Convivência"), apesar do rótulo "Número de leitos"
+   na UI legada. 8 testes novos (35 passando no total). Serviço de apoio no
+   frontend (`dto/mapper/model/service`, CRUD completo); sem página própria
+   ainda — vira combo de seleção quando `estadias` (próximo item) for
+   implementada.
+3. ✅ **`estadias`** — feature central do abrigo (~4.434 registros).
+   **Implementado (2026-09-10):** CRUD completo (`app/features/estadias/`)
+   + sub-recurso `EstadiaAcompanhante`, endpoint `POST
+   /api/estadias/{id}/encerrar` (atalho pro fluxo real do legado — uma
+   estadia é encerrada, não deletada). Migração
+   `alembic/versions/0004_estadias.py`. 15 testes novos (42 passando no
+   total). Serviço de apoio no frontend com CRUD completo; ainda sem
+   tela própria — rota placeholder no `app.routes.ts` continua.
+4. ✅ **`voluntarios`** — CRUD simples (40 registros), sem dependências.
+   **Implementado (2026-09-10):** CRUD completo em
+   `app/features/voluntarios/`, migração
+   `alembic/versions/0005_voluntarios.py`, mesmo padrão de `pessoas` (busca
+   por nome/CPF, inativação lógica). 7 testes novos (49 passando no total).
+   Serviço de apoio no frontend com CRUD completo; sem página própria ainda
+   — rota placeholder no `app.routes.ts` continua.
+5. ✅ **`materiais`** — CRUD simples (~1.710 registros), pré-requisito de
+   `emprestimos`. **Implementado (2026-09-10):** CRUD completo em
+   `app/features/materiais/`, migração
+   `alembic/versions/0006_materiais.py`. `situacao` modelado como `String`
+   livre (campo `TcxDBTextEdit` no legado, não um combo fechado — diferente
+   de `estadia.situacao`); `ativo` como `bool | None` (opcional no dump,
+   igual `estadia.ativo`). Filtro `apenas_disponiveis_emprestimo` já pronto
+   pro combo de seleção de item na feature `emprestimos`. 8 testes novos
+   (57 passando no total). Serviço de apoio no frontend com CRUD completo;
+   sem página própria ainda.
+6. ✅ **`emprestimos`** (+ `emprestimo_item`) — depende de `pessoas`,
+   `usuarios` e `materiais`. **Implementado (2026-09-10):** CRUD completo
+   em `app/features/emprestimos/` + sub-recurso `EmprestimoItem` (`GET`/
+   `POST`/`PUT`, sem exclusão — no legado um item não é removido, só tem a
+   situação atualizada pra "Devolvido"). Migração
+   `alembic/versions/0007_emprestimos.py`. `situacao` (texto livre, mesmo
+   padrão de `material.situacao`) e `renovacao` (texto livre, não
+   data/boolean — dado real tem histórico corrido tipo "até 22/03/2019 ...
+   Devolvido 02/07/2019") modelados como `String`. 9 testes novos (66
+   passando no total). Serviço de apoio no frontend com CRUD completo;
+   sem página própria ainda.
+7. ✅ **`avaliacao_social` / `composicao_familiar`** — sub-rotinas de
+   `pessoa` com controle de acesso (só assistente social, regra que
+   precisava ser criada do zero — o legado não implementava essa
+   restrição). **Implementado (2026-09-10):** primeira infraestrutura de
+   autorização do backend —
+   `app/features/auth/dependencies.py` (`usuario_atual` decodifica o JWT de
+   `POST /api/auth/login`; `exigir_perfil(*perfis)` retorna 403 se
+   `Usuario.perfil` não bater) — até aqui nenhum endpoint exigia
+   autenticação. Os dois routers novos
+   (`app/features/avaliacao_social/`, `app/features/composicao_familiar/`)
+   usam `dependencies=[Depends(exigir_perfil("assistente_social"))]` no
+   `APIRouter` inteiro. Endpoints aninhados sob pessoa
+   (`/api/pessoas/{pessoa_id}/avaliacoes-sociais`,
+   `.../composicao-familiar`). Migração
+   `alembic/versions/0008_avaliacao_social_composicao_familiar.py`. 10
+   testes novos, incluindo 401 sem token e 403 com perfil errado (76
+   passando no total). Frontend: `authInterceptor` novo
+   (`core/http/auth.interceptor.ts`) anexa o Bearer token do
+   `AuthService` em toda chamada à API — primeira vez que o token
+   guardado no login é realmente usado; serviços de apoio em
+   `features/pessoas/avaliacao-social/` e
+   `features/pessoas/composicao-familiar/`.
 8. **`disponibilidade` / `procedimentos`** — só depois de confirmar com a
-   instituição se ainda são usados (ver achado 2 acima).
+   instituição se ainda são usados (ver achado 2 acima). **Decisão
+   (2026-09-10): não implementar agora.** Ficam de fora deliberadamente até
+   o resto do sistema estar 100% migrado — aí sim confirma-se com a
+   instituição se valem a pena (0 registros em produção sugere que talvez
+   não). Backlog considerado concluído para efeitos de "features
+   principais" com essa exceção intencional.
 
 ## Atividades de infraestrutura / ETL
 
