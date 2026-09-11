@@ -1,13 +1,44 @@
+from datetime import UTC, datetime
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.features.emprestimos.models import Emprestimo, EmprestimoItem
+from app.features.emprestimos.models import Emprestimo, EmprestimoHistorico, EmprestimoItem
 from app.features.emprestimos.schemas import (
     EmprestimoCreate,
     EmprestimoItemCreate,
     EmprestimoItemUpdate,
     EmprestimoUpdate,
 )
+from app.features.materiais.models import Material
+
+
+def _registrar_historico(
+    db: Session, id_emprestimo: int, id_usuario: int, tipo: str, observacao: str
+) -> None:
+    db.add(
+        EmprestimoHistorico(
+            id_emprestimo=id_emprestimo,
+            id_usuario=id_usuario,
+            tipo=tipo,
+            observacao=observacao,
+            # Coluna `DateTime` sem timezone (mesmo padrão de
+            # `Estadia.data_entrada`) — grava naive em UTC.
+            data_cadastro=datetime.now(UTC).replace(tzinfo=None),
+        )
+    )
+    db.commit()
+
+
+def _descricao_item(db: Session, item: EmprestimoItem) -> str:
+    material = db.get(Material, item.id_material)
+    descricao_material = material.descricao if material else f"material #{item.id_material}"
+    data_emprestimo = item.data_emprestimo.strftime("%d/%m/%Y") if item.data_emprestimo else "-"
+    data_devolucao = item.data_devolucao.strftime("%d/%m/%Y") if item.data_devolucao else "-"
+    return (
+        f"{descricao_material} (situação: {item.situacao or '-'}, "
+        f"data empréstimo: {data_emprestimo}, data devolução: {data_devolucao})"
+    )
 
 
 def listar(
@@ -37,14 +68,32 @@ def criar(db: Session, dados: EmprestimoCreate) -> Emprestimo:
     db.add(emprestimo)
     db.commit()
     db.refresh(emprestimo)
+    _registrar_historico(db, emprestimo.id, dados.id_usuario, "Inclusão", "Cadastro do registro.")
     return emprestimo
 
 
 def atualizar(db: Session, emprestimo: Emprestimo, dados: EmprestimoUpdate) -> Emprestimo:
+    observacao_anterior = emprestimo.observacao or ""
+
     for campo, valor in dados.model_dump().items():
         setattr(emprestimo, campo, valor)
     db.commit()
     db.refresh(emprestimo)
+
+    observacao_nova = emprestimo.observacao or ""
+    if observacao_nova != observacao_anterior:
+        # Observação normalmente cresce por acréscimo (usuário vai
+        # completando o texto anterior) — nesse caso o histórico guarda só
+        # o trecho novo, em vez de repetir tudo de novo a cada alteração.
+        # Ver `qryDadosBeforePost` em `untDtmManutencaoEmprestimo.pas`.
+        if observacao_nova.startswith(observacao_anterior):
+            texto = observacao_nova[len(observacao_anterior):].strip()
+        else:
+            texto = f'Observação alterada de "{observacao_anterior}" para "{observacao_nova}"'
+
+        if texto:
+            _registrar_historico(db, emprestimo.id, dados.id_usuario, "Alteração", texto)
+
     return emprestimo
 
 
@@ -59,10 +108,15 @@ def listar_itens(db: Session, emprestimo_id: int) -> list[EmprestimoItem]:
 
 
 def adicionar_item(db: Session, emprestimo_id: int, dados: EmprestimoItemCreate) -> EmprestimoItem:
-    item = EmprestimoItem(id_emprestimo=emprestimo_id, **dados.model_dump())
+    item = EmprestimoItem(
+        id_emprestimo=emprestimo_id, **dados.model_dump(exclude={"id_usuario"})
+    )
     db.add(item)
     db.commit()
     db.refresh(item)
+    _registrar_historico(
+        db, emprestimo_id, dados.id_usuario, "Item incluído", f"Item incluído: {_descricao_item(db, item)}"
+    )
     return item
 
 
@@ -73,8 +127,16 @@ def buscar_item(db: Session, item_id: int) -> EmprestimoItem | None:
 def atualizar_item(
     db: Session, item: EmprestimoItem, dados: EmprestimoItemUpdate
 ) -> EmprestimoItem:
-    for campo, valor in dados.model_dump().items():
+    for campo, valor in dados.model_dump(exclude={"id_usuario"}).items():
         setattr(item, campo, valor)
     db.commit()
     db.refresh(item)
+    _registrar_historico(
+        db, item.id_emprestimo, dados.id_usuario, "Item alterado", f"Item alterado: {_descricao_item(db, item)}"
+    )
     return item
+
+
+def listar_historico(db: Session, emprestimo_id: int) -> list[EmprestimoHistorico]:
+    consulta = select(EmprestimoHistorico).where(EmprestimoHistorico.id_emprestimo == emprestimo_id)
+    return list(db.scalars(consulta.order_by(EmprestimoHistorico.data_cadastro.desc())).all())

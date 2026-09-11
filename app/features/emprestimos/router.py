@@ -5,6 +5,7 @@ from app.core.database import get_db
 from app.features.emprestimos import service
 from app.features.emprestimos.schemas import (
     EmprestimoCreate,
+    EmprestimoHistoricoResponse,
     EmprestimoItemCreate,
     EmprestimoItemResponse,
     EmprestimoItemUpdate,
@@ -88,3 +89,13 @@ def atualizar_item(
     if item is None or item.id_emprestimo != emprestimo_id:
         raise HTTPException(status_code=404, detail="Item de empréstimo não encontrado")
     return EmprestimoItemResponse.model_validate(service.atualizar_item(db, item, dados))
+
+
+@router.get("/{emprestimo_id}/historico", response_model=list[EmprestimoHistoricoResponse])
+def listar_historico(emprestimo_id: int, db: Session = Depends(get_db)) -> list[EmprestimoHistoricoResponse]:
+    emprestimo = service.buscar(db, emprestimo_id)
+    if emprestimo is None:
+        raise HTTPException(status_code=404, detail="Empréstimo não encontrado")
+    return [
+        EmprestimoHistoricoResponse.model_validate(h) for h in service.listar_historico(db, emprestimo_id)
+    ]

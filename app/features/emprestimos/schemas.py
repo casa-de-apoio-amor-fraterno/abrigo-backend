@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict
 
@@ -44,10 +44,13 @@ class EmprestimoItemBase(BaseModel):
 
 
 class EmprestimoItemCreate(EmprestimoItemBase):
-    pass
+    # Quem registrou a inclusão/edição — usado só para gravar
+    # `EmprestimoHistorico` (ver service.py); mesmo padrão de
+    # `Estadia.id_usuario`, não é um dado do item em si.
+    id_usuario: int
 
 
-class EmprestimoItemUpdate(EmprestimoItemBase):
+class EmprestimoItemUpdate(EmprestimoItemCreate):
     pass
 
 
@@ -56,3 +59,14 @@ class EmprestimoItemResponse(EmprestimoItemBase):
 
     id: int
     id_emprestimo: int
+
+
+class EmprestimoHistoricoResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    id_emprestimo: int
+    id_usuario: int
+    tipo: str
+    observacao: str
+    data_cadastro: datetime

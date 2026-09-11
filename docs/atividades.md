@@ -212,17 +212,38 @@ Ordem baseada em dependência de FK (não dá pra implementar `estadia` sem
 
 ## Atividades de infraestrutura / ETL
 
-- [ ] Escrever o script de ETL (`pgloader` + mapeamentos por tabela) —
-  ver `docs/migracao-postgres.md`.
-- [ ] Decidir e documentar o destino de `acompanhamento` (achado 1).
+- [x] Escrever o script de ETL — em Python, não pgloader (ver decisão em
+  `docs/migracao-postgres.md`), testado de ponta a ponta contra o dump
+  real e contra Postgres real (2026-09-11).
+- [x] Decidir e documentar o destino de `acompanhamento` (achado 1) —
+  reconciliado automaticamente com `estadia_acompanhante` quando
+  inambíguo (paciente com 1 única estadia); casos ambíguos ficam listados
+  pra revisão manual, não inseridos por heurística.
 - [ ] Confirmar com a instituição se `disponibilidade`/`procedimento*` são
-  usados (achado 2) antes de priorizar.
-- [ ] Decidir `tipo_pessoa` vs `estadia_acompanhante` (achado 3) antes de
-  desenhar o model de `Estadia`.
-- [ ] Mapear todos os campos `varchar(3)` 'Sim'/'Não' → `boolean` na ETL
-  (achado 4) — não só `pessoa`/`usuario`.
-- [ ] Rodar `python -m app.scripts.hash_senhas_pendentes --confirmar` logo
-  após a carga inicial de dados.
-- [ ] Adicionar FK de verdade nos models novos assim que as tabelas de
-  apoio (`estados`, `municipios`, `hospitais`, `quartos`) existirem — hoje
-  `Pessoa.id_hospital`/`id_municipio`/`id_estado` são inteiros soltos.
+  usados (achado 2) antes de priorizar — **único item de infraestrutura
+  ainda genuinamente pendente**, depende de resposta da instituição, não
+  de código.
+- [x] Decidir `tipo_pessoa` vs `estadia_acompanhante` (achado 3) — não
+  eram redundantes, os dois foram mantidos (ver `estadia.legacy.md`).
+- [x] Mapear todos os campos `varchar(3)` 'Sim'/'Não' → `boolean` na ETL
+  (achado 4) — feito em `app/scripts/etl/transformacoes.py` pra todas as
+  tabelas, não só `pessoa`/`usuario`.
+- [x] Rodar `python -m app.scripts.hash_senhas_pendentes --confirmar`
+  logo após a carga inicial de dados — testado contra Postgres real, 7
+  senhas hasheadas com sucesso.
+- [x] Adicionar FK de verdade nos models novos assim que as tabelas de
+  apoio existirem — `Pessoa.id_hospital`/`id_municipio`/`id_estado` já são
+  `ForeignKey` de verdade desde a migração `0002`.
+
+## Pós-conclusão: `emprestimo_historico` (2026-09-11)
+
+Backlog original (acima) foi concluído em 2026-09-10. Em 2026-09-11, ao
+implementar a tela de Empréstimos no frontend (item 8 de
+`abrigo-frontend/docs/atividades.md`), foi descoberto que o legado ganhou
+uma tabela nova — `emprestimo_historico` — **depois** do dump de produção
+usado na migração (script `Scripts/Atualização Setembro 2026/Criar tabela
+emprestimo_historico.sql`, 2026-09-09, mesmo autor). Não estava no
+inventário original deste documento porque não existia no dump. Trilha de
+auditoria de alterações do empréstimo (observação, itens) — implementada
+via migração `0010`, ver `app/features/emprestimos/emprestimo.legacy.md`
+pra detalhes da lógica replicada do legado.

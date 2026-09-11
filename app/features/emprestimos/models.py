@@ -1,6 +1,6 @@
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import Date, ForeignKey, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -45,3 +45,29 @@ class EmprestimoItem(Base):
     data_devolucao: Mapped[date | None] = mapped_column(Date, nullable=True)
     situacao: Mapped[str | None] = mapped_column(String(60), nullable=True)
     renovacao: Mapped[str | None] = mapped_column(String(60), nullable=True)
+
+
+class EmprestimoHistorico(Base):
+    """Mapeia a tabela `emprestimo_historico` — trilha de auditoria criada
+    pelo legado em 2026-09-09 (`Scripts/Atualização Setembro 2026/Criar
+    tabela emprestimo_historico.sql`), ainda não presente no dump de
+    produção usado na migração inicial. Registrada automaticamente pelo
+    backend (nunca por escrita direta do cliente) a cada criação de
+    empréstimo, alteração de observação, ou inclusão/edição de item — ver
+    `service.py` (`_registrar_historico`) e a lógica original em
+    `untDtmManutencaoEmprestimo.pas` (`RegistrarHistorico`,
+    `qryDadosBeforePost`, `SalvarDetalhe`).
+
+    `tipo` é texto livre no legado (varchar(20)) com valores observados:
+    'Inclusão', 'Alteração', 'Item incluído', 'Item alterado' — mantido
+    como `String`, não enum.
+    """
+
+    __tablename__ = "emprestimo_historico"
+
+    id: Mapped[int] = mapped_column("id_emprestimo_historico", primary_key=True)
+    id_emprestimo: Mapped[int] = mapped_column(ForeignKey("emprestimo.id_emprestimo"))
+    id_usuario: Mapped[int] = mapped_column(ForeignKey("usuario.id_usuario"))
+    tipo: Mapped[str] = mapped_column(String(20))
+    observacao: Mapped[str] = mapped_column(Text)
+    data_cadastro: Mapped[datetime] = mapped_column(DateTime)

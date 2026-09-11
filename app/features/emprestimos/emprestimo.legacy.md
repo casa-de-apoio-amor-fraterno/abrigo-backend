@@ -39,6 +39,50 @@ sub-recurso de `Emprestimo` (mesmo padrão de `EstadiaAcompanhante` em
 `GET`/`POST`/`PUT` (sem exclusão — no legado um item de empréstimo não é
 removido, só tem sua situação atualizada pra "Devolvido").
 
+## `emprestimo_historico` (adicionada 2026-09-11)
+
+Trilha de auditoria — **não existe no dump de produção original**
+(`sgf_abrigo`, 2026-09-09), foi criada no legado *depois* do dump, via
+`abrigo-legacy/Scripts/Atualização Setembro 2026/Criar tabela
+emprestimo_historico.sql` (autor: Samuel Parastchuk, 2026-09-09). Registra
+automaticamente cada criação de empréstimo, alteração de observação, ou
+inclusão/edição de item — nunca escrita diretamente pelo cliente da API.
+
+Campos: `id_emprestimo_historico` (PK), `id_emprestimo`/`id_usuario` (FK),
+`tipo` (varchar(20), texto livre — valores observados na lógica original:
+`'Inclusão'`, `'Alteração'`, `'Item incluído'`, `'Item alterado'`;
+`'Item removido'` existe no legado mas nunca ocorre no backend novo porque
+não há endpoint de exclusão de item), `observacao` (text, obrigatório —
+descrição gerada automaticamente, não digitada pelo usuário),
+`data_cadastro` (datetime, obrigatório).
+
+Lógica replicada de `untDtmManutencaoEmprestimo.pas`
+(`RegistrarHistorico`, `qryDadosBeforePost`, `SalvarDetalhe`) em
+`service.py` (`_registrar_historico`, `_descricao_item`):
+- Criar empréstimo → `tipo='Inclusão'`, `observacao='Cadastro do registro.'`
+- Editar empréstimo, só se `observacao` mudou → `tipo='Alteração'`. Se o
+  texto novo começa com o texto antigo (caso comum: usuário vai
+  completando a observação), guarda só o trecho acrescentado; senão guarda
+  `'Observação alterada de "X" para "Y"'`.
+- Incluir/editar item → `tipo='Item incluído'`/`'Item alterado'`,
+  `observacao` no formato `"{descrição do material} (situação: X, data
+  empréstimo: dd/mm/yyyy, data devolução: dd/mm/yyyy ou -)"`.
+
+`EmprestimoItemCreate`/`Update` ganharam campo `id_usuario` (mesmo padrão
+de `Estadia.id_usuario` — client-supplied, não vem de `usuario_atual`) só
+pra alimentar o histórico; não é persistido na linha do item.
+
+**Gap conhecido, não implementado:** o legado também atualiza
+`Material.situacao` automaticamente a cada item incluído/editado/removido
+(`AtualizarSituacaoMaterial`) — o backend novo não replica esse
+side-effect ainda. Ficou fora de escopo desta mudança (só histórico foi
+pedido); considerar ao revisar o fluxo completo de Material↔Empréstimo.
+
+Migração `0010_emprestimo_historico`. 7 testes novos cobrindo
+inclusão/alteração/item, incluindo os dois casos de diff de observação
+(acréscimo vs. substituição total) e o caso "sem mudança não registra".
+
 ## Status
-Mapeado e implementado (CRUD completo + sub-recurso de itens). Dados reais
+Mapeado e implementado (CRUD completo + sub-recurso de itens + histórico
+de auditoria). Dados reais (exceto histórico, que não existia no dump)
 entram via ETL (`docs/migracao-postgres.md`), não pela migração Alembic.
