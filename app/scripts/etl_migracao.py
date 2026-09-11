@@ -50,10 +50,10 @@ from app.features.estados.models import Estado
 from app.features.hospitais.models import Hospital
 from app.features.materiais.models import Material
 from app.features.municipios.models import Municipio
-from app.features.pessoas.models import Pessoa
+from app.features.pessoas.models import Pessoa, PessoaContato
 from app.features.quartos.models import Quarto
 from app.features.usuarios.models import Usuario
-from app.features.voluntarios.models import Voluntario
+from app.features.voluntarios.models import Voluntario, VoluntarioContato
 from app.scripts.etl import transformacoes as t
 from app.scripts.etl.reconciliacao import RegistroAcompanhamento, reconciliar
 
@@ -103,6 +103,36 @@ def _carregar_tabela(
         _resincronizar_sequencia(sessao_destino, modelo_destino)
 
     return len(transformadas)
+
+
+def _carregar_contatos(
+    conexao_origem,
+    sessao_destino: Session,
+    tabela_origem: str,
+    coluna_id_origem: str,
+    coluna_fk_destino: str,
+    modelo_contato: type[Base],
+    confirmar: bool,
+) -> int:
+    """Separa o campo `telefone` (texto livre legado) de cada linha em
+    contatos estruturados via `transformacoes.parse_contatos` (ver
+    `app/features/pessoas/pessoa.legacy.md`, seção Contatos) e insere na
+    tabela nova. Sem `id` explícito — são linhas novas, não existem no
+    legado, o Postgres atribui o id (sem precisar resincronizar sequence)."""
+    linhas = _ler_tabela(conexao_origem, tabela_origem)
+    contatos = [
+        {coluna_fk_destino: linha[coluna_id_origem], **contato}
+        for linha in linhas
+        for contato in t.parse_contatos(linha["telefone"])
+    ]
+
+    print(f"  {tabela_origem}.telefone -> {modelo_contato.__tablename__}: {len(contatos)} contato(s)")
+
+    if confirmar and contatos:
+        sessao_destino.bulk_insert_mappings(modelo_contato, contatos)
+        sessao_destino.commit()
+
+    return len(contatos)
 
 
 def _reconciliar_acompanhamento(
@@ -188,6 +218,19 @@ def executar(mysql_url: str, confirmar: bool) -> None:
                 _carregar_tabela(
                     conexao_origem, sessao_destino, tabela_origem, transformar, modelo_destino, confirmar
                 )
+
+            _carregar_contatos(
+                conexao_origem, sessao_destino, "pessoa", "id_pessoa", "id_pessoa", PessoaContato, confirmar
+            )
+            _carregar_contatos(
+                conexao_origem,
+                sessao_destino,
+                "voluntario",
+                "id_voluntario",
+                "id_voluntario",
+                VoluntarioContato,
+                confirmar,
+            )
 
             _reconciliar_acompanhamento(conexao_origem, sessao_destino, confirmar)
 

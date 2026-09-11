@@ -84,7 +84,6 @@ def test_criar_e_buscar_pessoa(client):
         json={
             "nome": "Ana Paula",
             "cpf": "33333333333",
-            "telefone": "11999999999",
             "data_nascimento": "1995-03-20",
         },
     )
@@ -94,6 +93,57 @@ def test_criar_e_buscar_pessoa(client):
     resposta = client.get(f"/api/pessoas/{pessoa_id}")
     assert resposta.status_code == 200
     assert resposta.json()["nome"] == "Ana Paula"
+    assert resposta.json()["telefone_principal"] is None
+
+
+def test_contatos_de_pessoa(client):
+    pessoa_id = client.post(
+        "/api/pessoas", json={"nome": "Beatriz", "data_nascimento": "1980-01-01"}
+    ).json()["id"]
+
+    resposta = client.post(
+        f"/api/pessoas/{pessoa_id}/contatos",
+        json={"numero": "47988132030", "nome_contato": "Esposa", "principal": True},
+    )
+    assert resposta.status_code == 201
+    contato_id = resposta.json()["id"]
+
+    resposta = client.post(
+        f"/api/pessoas/{pessoa_id}/contatos", json={"numero": "111"}
+    )
+    assert resposta.status_code == 201
+
+    resposta = client.get(f"/api/pessoas/{pessoa_id}")
+    assert resposta.json()["telefone_principal"] == "47988132030"
+
+    resposta = client.get(f"/api/pessoas/{pessoa_id}/contatos")
+    assert len(resposta.json()) == 2
+
+    resposta = client.put(
+        f"/api/pessoas/{pessoa_id}/contatos/{contato_id}", json={"numero": "222"}
+    )
+    assert resposta.status_code == 200
+    assert resposta.json()["numero"] == "222"
+
+    resposta = client.delete(f"/api/pessoas/{pessoa_id}/contatos/{contato_id}")
+    assert resposta.status_code == 204
+
+    resposta = client.get(f"/api/pessoas/{pessoa_id}/contatos")
+    assert len(resposta.json()) == 1
+
+
+def test_contato_de_pessoa_inexistente(client):
+    pessoa_id = client.post(
+        "/api/pessoas", json={"nome": "Carla", "data_nascimento": "1980-01-01"}
+    ).json()["id"]
+
+    resposta = client.put(
+        f"/api/pessoas/{pessoa_id}/contatos/999", json={"numero": "111"}
+    )
+    assert resposta.status_code == 404
+
+    resposta = client.delete(f"/api/pessoas/{pessoa_id}/contatos/999")
+    assert resposta.status_code == 404
 
 
 def test_buscar_pessoa_inexistente(client):

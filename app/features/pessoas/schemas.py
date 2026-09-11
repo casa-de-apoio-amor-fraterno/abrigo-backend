@@ -12,7 +12,6 @@ class PessoaBase(BaseModel):
     cartao_sus: str | None = None
     endereco: str | None = None
     ponto_referencia: str | None = None
-    telefone: str | None = None
     id_hospital: int | None = None
     id_municipio: int | None = None
     id_estado: int | None = None
@@ -35,7 +34,7 @@ class PessoaResumoResponse(BaseModel):
     id: int
     nome: str
     cpf: str | None
-    telefone: str | None
+    telefone_principal: str | None
     data_nascimento: date
     tem_foto: bool
 
@@ -47,3 +46,26 @@ class PessoaResponse(PessoaBase):
     ativo: bool
     data_cadastro: date | None
     tem_foto: bool
+    telefone_principal: str | None
+
+
+class PessoaContatoBase(BaseModel):
+    numero: str
+    nome_contato: str | None = None
+    observacao: str | None = None
+    principal: bool = False
+
+
+class PessoaContatoCreate(PessoaContatoBase):
+    pass
+
+
+class PessoaContatoUpdate(PessoaContatoBase):
+    pass
+
+
+class PessoaContatoResponse(PessoaContatoBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    id_pessoa: int

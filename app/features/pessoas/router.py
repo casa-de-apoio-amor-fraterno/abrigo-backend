@@ -5,6 +5,9 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.features.pessoas import service
 from app.features.pessoas.schemas import (
+    PessoaContatoCreate,
+    PessoaContatoResponse,
+    PessoaContatoUpdate,
     PessoaCreate,
     PessoaResponse,
     PessoaResumoResponse,
@@ -81,3 +84,36 @@ def remover_foto(pessoa_id: int, db: Session = Depends(get_db)) -> None:
     if pessoa is None:
         raise HTTPException(status_code=404, detail="Pessoa não encontrada")
     service.remover_foto(db, pessoa)
+
+
+@router.get("/{pessoa_id}/contatos", response_model=list[PessoaContatoResponse])
+def listar_contatos(pessoa_id: int, db: Session = Depends(get_db)) -> list[PessoaContatoResponse]:
+    return [PessoaContatoResponse.model_validate(c) for c in service.listar_contatos(db, pessoa_id)]
+
+
+@router.post("/{pessoa_id}/contatos", response_model=PessoaContatoResponse, status_code=201)
+def criar_contato(
+    pessoa_id: int, dados: PessoaContatoCreate, db: Session = Depends(get_db)
+) -> PessoaContatoResponse:
+    pessoa = service.buscar(db, pessoa_id)
+    if pessoa is None:
+        raise HTTPException(status_code=404, detail="Pessoa não encontrada")
+    return PessoaContatoResponse.model_validate(service.criar_contato(db, pessoa_id, dados))
+
+
+@router.put("/{pessoa_id}/contatos/{contato_id}", response_model=PessoaContatoResponse)
+def atualizar_contato(
+    pessoa_id: int, contato_id: int, dados: PessoaContatoUpdate, db: Session = Depends(get_db)
+) -> PessoaContatoResponse:
+    contato = service.buscar_contato(db, contato_id)
+    if contato is None or contato.id_pessoa != pessoa_id:
+        raise HTTPException(status_code=404, detail="Contato não encontrado")
+    return PessoaContatoResponse.model_validate(service.atualizar_contato(db, contato, dados))
+
+
+@router.delete("/{pessoa_id}/contatos/{contato_id}", status_code=204)
+def remover_contato(pessoa_id: int, contato_id: int, db: Session = Depends(get_db)) -> None:
+    contato = service.buscar_contato(db, contato_id)
+    if contato is None or contato.id_pessoa != pessoa_id:
+        raise HTTPException(status_code=404, detail="Contato não encontrado")
+    service.remover_contato(db, contato)

@@ -1,7 +1,7 @@
 from datetime import date
 
 from sqlalchemy import Date, ForeignKey, LargeBinary, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
@@ -29,7 +29,6 @@ class Pessoa(Base):
     cartao_sus: Mapped[str | None] = mapped_column(String(60), nullable=True)
     endereco: Mapped[str | None] = mapped_column(String(60), nullable=True)
     ponto_referencia: Mapped[str | None] = mapped_column(String(60), nullable=True)
-    telefone: Mapped[str | None] = mapped_column(String(60), nullable=True)
     id_hospital: Mapped[int | None] = mapped_column(ForeignKey("hospital.id_hospital"), nullable=True)
     id_municipio: Mapped[int | None] = mapped_column(ForeignKey("municipio.id_municipio"), nullable=True)
     id_estado: Mapped[int | None] = mapped_column(ForeignKey("estado.id_estado"), nullable=True)
@@ -50,3 +49,37 @@ class Pessoa(Base):
     @property
     def tem_foto(self) -> bool:
         return self.foto is not None
+
+    contatos: Mapped[list["PessoaContato"]] = relationship(
+        order_by="PessoaContato.id", cascade="all, delete-orphan"
+    )
+
+    @property
+    def telefone_principal(self) -> str | None:
+        """Usado na listagem/consulta — o telefone `principal` (ou o
+        primeiro cadastrado, se nenhum foi marcado como principal). Ver
+        `pessoa.legacy.md` (seção Contatos) pra decisão de normalizar
+        telefone numa tabela própria."""
+        if not self.contatos:
+            return None
+        principal = next((c for c in self.contatos if c.principal), self.contatos[0])
+        return principal.numero
+
+
+class PessoaContato(Base):
+    """Telefone(s) de contato de uma pessoa — normalizado numa tabela
+    própria (2026-09-11): o campo `pessoa.telefone` legado era texto livre
+    sem estrutura (`varchar(60)`, um único `TcxDBTextEdit` no Delphi, sem
+    máscara) e o dado real de produção mistura múltiplos números, nome de
+    quem atende e observações no mesmo campo (ex.: "Sidney 42-98818-3580
+    Esposa 98827-3809"). Ver `pessoa.legacy.md` pra detalhes da migração
+    (heurística de separação em `app/scripts/etl/transformacoes.py`)."""
+
+    __tablename__ = "pessoa_contato"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    id_pessoa: Mapped[int] = mapped_column(ForeignKey("pessoa.id_pessoa"))
+    numero: Mapped[str] = mapped_column(String(60))
+    nome_contato: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    observacao: Mapped[str | None] = mapped_column(Text, nullable=True)
+    principal: Mapped[bool] = mapped_column(default=False)

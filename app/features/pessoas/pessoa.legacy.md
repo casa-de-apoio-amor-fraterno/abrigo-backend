@@ -118,6 +118,61 @@ endpoints próprios: `GET /api/pessoas/{id}/foto` (retorna a imagem crua,
 substitui a foto existente) e `DELETE /api/pessoas/{id}/foto` (remove).
 Migração `alembic/versions/0011_pessoa_foto.py`.
 
+## Contatos (2026-09-11) — normalização de telefone
+
+`pessoa.telefone` no legado é `varchar(60)`, um único `TcxDBTextEdit`
+(`untFrmManutencaoPessoa.dfm`) sem `EditMask`/`MaxLength`, sem campos
+separados de DDD/tipo — texto livre puro. O dado real de produção mostra
+o resultado disso: múltiplos números no mesmo campo, nome de quem atende
+misturado, e observações embutidas. Exemplos reais (dump `sgf_abrigo`):
+
+- `'9 9980-0546 - Josiane  Contato familar - 069-9919-7124'`
+- `'(42)9857-1037/(42)99989-5775'`
+- `'42-98818-3580 Sidney        98827-3809 esposa'`
+- `'Silvano 47-99961-3678       Casa 47-99917-8100'`
+- `'47-99950-1938        p/ recado 47-3622-2982'`
+- `'3522 5571 ou 88450659'` (usa "ou" como separador)
+- Formatos inconsistentes: com/sem DDD, com/sem hífen/parênteses, 8 ou 9
+  dígitos.
+
+O mesmo padrão existe em `voluntario.telefone` (ver
+`app/features/voluntarios/voluntario.legacy.md`) — nenhuma outra entidade
+do sistema tem campo de telefone/contato.
+
+**Decisão (2026-09-11, confirmada com o usuário):** telefone vira tabela
+própria, `PessoaContato`/`VoluntarioContato` (uma tabela dedicada por
+entidade — não uma tabela `contato` genérica com FK polimórfica —, mesmo
+padrão de sub-recurso já usado em `EstadiaAcompanhante`/`EmprestimoItem`).
+Campos: `numero`, `nome_contato` (opcional — quem atende naquele número,
+ex. "Esposa", "Sidney"), `observacao` (opcional), `principal` (bool, qual
+número aparece na listagem). `Pessoa.telefone_principal`/
+`Voluntario.telefone_principal` (properties) expõem o contato principal
+(ou o primeiro cadastrado) pra listagem/consulta sem quebrar
+`PessoaResumoResponse`/`VoluntarioResumoResponse`.
+
+**Migração dos dados existentes:** o usuário optou por tentar separar
+automaticamente os múltiplos números por texto livre, mesmo sabendo do
+risco de ambiguidade (nome colado no número, "ou" como separador etc.).
+`app/scripts/etl/transformacoes.parse_contatos()` faz isso via heurística
+best-effort: quebra o texto em segmentos por separadores comuns (2+
+espaços, `/`, `" ou "`, `;`, quebra de linha), tenta reconhecer um trecho
+numérico (8 a 11 dígitos) em cada segmento, e trata o texto ao redor do
+número como `nome_contato` (descartando palavras de ruído tipo "ou"/
+"recado"/"p/"). **Nunca descarta informação silenciosamente**: quando um
+segmento não parece ter um número reconhecível, ele vira um contato com o
+texto original inteiro em `numero` e uma `observacao` sinalizando revisão
+manual — a equipe pode limpar isso depois pela tela nova, em vez de perder
+o dado ou o parser inventar um número errado. Ver
+`tests/test_etl_transformacoes.py` pros casos reais cobertos por teste.
+
+Integrado em `app/scripts/etl_migracao.py` (`_carregar_contatos`) — roda
+automaticamente como parte do ETL principal (MySQL legado -> Postgres
+novo), lendo o `telefone` bruto de cada linha de `pessoa`/`voluntario` e
+inserindo os contatos derivados. Migração `0012_pessoa_voluntario_contato`
+cria as tabelas (aditiva); `0013_remove_telefone_pessoa_voluntario`
+remove a coluna antiga — **só deve ser aplicada depois de confirmado que
+o ETL já rodou** (documentado no docstring da própria migração).
+
 ## Status:
 - Mapeado com campos reais. Endpoint de consulta (`GET /api/pessoas`) com
   busca por nome/CPF implementado. Cadastro/edição implementados no backend;

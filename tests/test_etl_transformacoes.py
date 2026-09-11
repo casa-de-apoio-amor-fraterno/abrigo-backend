@@ -3,6 +3,7 @@ from datetime import date, datetime
 from app.scripts.etl.transformacoes import (
     data_zerada_para_none,
     datetime_zerado_para_none,
+    parse_contatos,
     sim_nao_para_bool,
     texto_ou_none,
     transformar_avaliacao_social,
@@ -11,6 +12,7 @@ from app.scripts.etl.transformacoes import (
     transformar_material,
     transformar_pessoa,
     transformar_usuario,
+    transformar_voluntario,
 )
 
 
@@ -143,6 +145,112 @@ def test_transformar_estadia_tipo_pessoa_default_paciente():
 
     assert resultado["tipo_pessoa"] == "Paciente"
     assert resultado["data_entrada"] == datetime(2018, 7, 11, 0, 0, 0)
+
+
+def test_parse_contatos_vazio():
+    assert parse_contatos(None) == []
+    assert parse_contatos("") == []
+    assert parse_contatos("   ") == []
+
+
+def test_parse_contatos_numero_unico():
+    resultado = parse_contatos("988132030")
+
+    assert resultado == [
+        {"numero": "988132030", "nome_contato": None, "observacao": None, "principal": True}
+    ]
+
+
+def test_parse_contatos_multiplos_numeros_separados_por_barra():
+    """Dado real: '(42)9857-1037/(42)99989-5775'."""
+    resultado = parse_contatos("(42)9857-1037/(42)99989-5775")
+
+    assert [c["numero"] for c in resultado] == ["(42)9857-1037", "(42)99989-5775"]
+    assert resultado[0]["principal"] is True
+    assert resultado[1]["principal"] is False
+
+
+def test_parse_contatos_multiplos_numeros_separados_por_espacos():
+    """Dado real: '47-3642-6822      47-98411-2834        47-999969197'."""
+    resultado = parse_contatos("47-3642-6822      47-98411-2834        47-999969197")
+
+    assert [c["numero"] for c in resultado] == ["47-3642-6822", "47-98411-2834", "47-999969197"]
+
+
+def test_parse_contatos_separa_nome_de_quem_atende():
+    """Dado real: '42-98818-3580 Sidney        98827-3809 esposa'."""
+    resultado = parse_contatos("42-98818-3580 Sidney        98827-3809 esposa")
+
+    assert resultado[0]["numero"] == "42-98818-3580"
+    assert resultado[0]["nome_contato"] == "Sidney"
+    assert resultado[1]["numero"] == "98827-3809"
+    assert resultado[1]["nome_contato"] == "esposa"
+
+
+def test_parse_contatos_separador_ou():
+    """Dado real: '3522 5571 ou 88450659'."""
+    resultado = parse_contatos("3522 5571 ou 88450659")
+
+    assert [c["numero"] for c in resultado] == ["3522 5571", "88450659"]
+
+
+def test_parse_contatos_texto_nao_reconhecido_nao_perde_dado():
+    """Segmento sem número reconhecível preserva o texto original inteiro
+    e sinaliza revisão manual — nunca é descartado silenciosamente."""
+    resultado = parse_contatos("Sem telefone")
+
+    assert len(resultado) == 1
+    assert resultado[0]["numero"] == "Sem telefone"
+    assert resultado[0]["observacao"] is not None
+
+
+def test_transformar_pessoa_nao_inclui_telefone():
+    """`telefone` foi removido do schema de `Pessoa` — normalizado em
+    `PessoaContato` via `parse_contatos`, não copiado direto."""
+    linha = {
+        "id_pessoa": 1,
+        "nome": "Maria",
+        "data_nascimento": "1990-01-01",
+        "rg": None,
+        "cpf": "11111111111",
+        "profissao": None,
+        "cartao_sus": None,
+        "endereco": None,
+        "ponto_referencia": None,
+        "telefone": "999999999",
+        "id_hospital": None,
+        "id_municipio": None,
+        "id_estado": None,
+        "observacao": None,
+        "tipo": "Paciente",
+        "acompanhamento_social": None,
+        "data_cadastro": "2018-07-11",
+        "ativo": "Sim",
+    }
+
+    resultado = transformar_pessoa(linha)
+
+    assert "telefone" not in resultado
+
+
+def test_transformar_voluntario_nao_inclui_telefone():
+    linha = {
+        "id_voluntario": 1,
+        "nome": "João",
+        "telefone": "999999999",
+        "setor": None,
+        "data_nascimento": None,
+        "estado_civil": None,
+        "cpf": None,
+        "endereco": None,
+        "formacao": None,
+        "observacao": None,
+        "ativo": "Sim",
+    }
+
+    resultado = transformar_voluntario(linha)
+
+    assert "telefone" not in resultado
 
 
 def test_transformar_avaliacao_social_nao_converte_casos_cancer_familia():

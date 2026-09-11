@@ -10,7 +10,74 @@ Ver `docs/migracao-postgres.md` e `docs/atividades.md` (achado 4) para o
 raciocínio por trás de cada conversão.
 """
 
+import re
 from datetime import date, datetime
+
+# Separadores usados no dado real pra emendar mais de um telefone no mesmo
+# campo de texto livre (ver achado na investigação de docs/atividades.md,
+# seção Contatos): 2+ espaços seguidos, "/", " ou ", ";" ou quebra de linha.
+_SEPARADOR_MULTIPLOS_CONTATOS = re.compile(r"\s{2,}|/|\bou\b|\n|;", re.IGNORECASE)
+
+# Um "trecho de número": começa e termina em dígito/parêntese, com pelo
+# menos 7 caracteres no meio (dígitos, espaço, hífen, ponto, parênteses) —
+# suficiente pra casar tanto "42-98818-3580" quanto "999500588" sem casar
+# uma palavra solta.
+_TRECHO_NUMERO = re.compile(r"[()\d][()\d\s.\-]{5,}\d")
+
+_PALAVRAS_RUIDO_CONTATO = {"ou", "e", "p/", "contato", "-", "recado", "p", "pra", "para", "com", "de"}
+
+
+def _somente_digitos(texto: str) -> str:
+    return re.sub(r"\D", "", texto)
+
+
+def parse_contatos(texto_bruto: str | None) -> list[dict]:
+    """Separa o campo `telefone` legado (texto livre, sem estrutura — ver
+    `app/features/pessoas/pessoa.legacy.md`, seção Contatos) numa lista de
+    contatos estruturados (`numero`/`nome_contato`/`observacao`/`principal`).
+
+    Heurística **best-effort**, não perfeita — o dado real mistura números
+    múltiplos, nome de quem atende e observações no mesmo campo de forma
+    ambígua demais pra um parser 100% confiável (ex.: "Sidney
+    42-98818-3580   Esposa 98827-3809"). Quando um trecho não parece
+    conter um número de telefone reconhecível, ele **não é descartado** —
+    vira um contato com o texto original inteiro e uma observação
+    sinalizando revisão manual, pra nunca perder informação silenciosamente
+    na migração.
+    """
+    if not texto_bruto or not texto_bruto.strip():
+        return []
+
+    segmentos = [s.strip(" ,;-") for s in _SEPARADOR_MULTIPLOS_CONTATOS.split(texto_bruto)]
+    segmentos = [s for s in segmentos if s]
+    if not segmentos:
+        segmentos = [texto_bruto.strip()]
+
+    contatos: list[dict] = []
+    for segmento in segmentos:
+        casamento = _TRECHO_NUMERO.search(segmento)
+        digitos = _somente_digitos(casamento.group()) if casamento else ""
+        if casamento and 8 <= len(digitos) <= 11:
+            numero = casamento.group().strip(" -")
+            resto = (segmento[: casamento.start()] + segmento[casamento.end() :]).strip(" -,;")
+            nome_contato = resto if resto and resto.lower() not in _PALAVRAS_RUIDO_CONTATO else None
+            contatos.append({"numero": numero, "nome_contato": nome_contato, "observacao": None})
+        else:
+            contatos.append(
+                {
+                    "numero": segmento,
+                    "nome_contato": None,
+                    "observacao": (
+                        "Não foi possível separar automaticamente na migração "
+                        "(campo de texto livre do legado) — revisar."
+                    ),
+                }
+            )
+
+    for indice, contato in enumerate(contatos):
+        contato["principal"] = indice == 0
+
+    return contatos
 
 
 def sim_nao_para_bool(valor: str | None) -> bool | None:
@@ -135,7 +202,6 @@ def transformar_pessoa(linha: dict) -> dict:
         "cartao_sus": texto_ou_none(linha["cartao_sus"]),
         "endereco": texto_ou_none(linha["endereco"]),
         "ponto_referencia": texto_ou_none(linha["ponto_referencia"]),
-        "telefone": texto_ou_none(linha["telefone"]),
         "id_hospital": linha["id_hospital"],
         "id_municipio": linha["id_municipio"],
         "id_estado": linha["id_estado"],
@@ -150,7 +216,6 @@ def transformar_voluntario(linha: dict) -> dict:
     return {
         "id": linha["id_voluntario"],
         "nome": linha["nome"],
-        "telefone": linha["telefone"],
         "setor": texto_ou_none(linha["setor"]),
         "data_nascimento": data_zerada_para_none(linha["data_nascimento"]),
         "estado_civil": texto_ou_none(linha["estado_civil"]),

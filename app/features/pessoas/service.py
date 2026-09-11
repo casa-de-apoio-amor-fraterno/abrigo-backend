@@ -1,14 +1,19 @@
 from datetime import date
 
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
-from app.features.pessoas.models import Pessoa
-from app.features.pessoas.schemas import PessoaCreate, PessoaUpdate
+from app.features.pessoas.models import Pessoa, PessoaContato
+from app.features.pessoas.schemas import (
+    PessoaContatoCreate,
+    PessoaContatoUpdate,
+    PessoaCreate,
+    PessoaUpdate,
+)
 
 
 def listar(db: Session, busca: str | None = None, skip: int = 0, take: int = 50) -> tuple[list[Pessoa], int]:
-    consulta = select(Pessoa).where(Pessoa.ativo.is_(True))
+    consulta = select(Pessoa).where(Pessoa.ativo.is_(True)).options(selectinload(Pessoa.contatos))
     if busca:
         termo = f"%{busca}%"
         consulta = consulta.where(or_(Pessoa.nome.ilike(termo), Pessoa.cpf.ilike(termo)))
@@ -67,4 +72,34 @@ def salvar_foto(db: Session, pessoa: Pessoa, conteudo: bytes, content_type: str 
 def remover_foto(db: Session, pessoa: Pessoa) -> None:
     pessoa.foto = None
     pessoa.foto_content_type = None
+    db.commit()
+
+
+def listar_contatos(db: Session, pessoa_id: int) -> list[PessoaContato]:
+    consulta = select(PessoaContato).where(PessoaContato.id_pessoa == pessoa_id)
+    return list(db.scalars(consulta.order_by(PessoaContato.id)).all())
+
+
+def buscar_contato(db: Session, contato_id: int) -> PessoaContato | None:
+    return db.get(PessoaContato, contato_id)
+
+
+def criar_contato(db: Session, pessoa_id: int, dados: PessoaContatoCreate) -> PessoaContato:
+    contato = PessoaContato(id_pessoa=pessoa_id, **dados.model_dump())
+    db.add(contato)
+    db.commit()
+    db.refresh(contato)
+    return contato
+
+
+def atualizar_contato(db: Session, contato: PessoaContato, dados: PessoaContatoUpdate) -> PessoaContato:
+    for campo, valor in dados.model_dump().items():
+        setattr(contato, campo, valor)
+    db.commit()
+    db.refresh(contato)
+    return contato
+
+
+def remover_contato(db: Session, contato: PessoaContato) -> None:
+    db.delete(contato)
     db.commit()
