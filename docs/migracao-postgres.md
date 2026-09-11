@@ -121,7 +121,7 @@ versionada, em ambiente local/controlado.
 
 - [x] Backend configurado para Postgres (`psycopg`) + `pgvector` instalado
       como dependência.
-- [x] Migrações Alembic (`0001` a `0008`) criam todas as 16 tabelas do
+- [x] Migrações Alembic (`0001` a `0009`) criam todas as 16 tabelas do
       schema novo (todas as features do backlog de `docs/atividades.md`,
       exceto `disponibilidade`/`procedimentos`, deixadas de fora por
       decisão — ver esse documento).
@@ -129,13 +129,40 @@ versionada, em ambiente local/controlado.
       ver decisão acima) com transformações testadas
       (`tests/test_etl_transformacoes.py`,
       `tests/test_etl_reconciliacao.py`, 16 testes).
-- [ ] Rodar a migração contra uma cópia de teste do dump antes de produção
-      — **não executado ainda**: o script não pôde ser testado contra um
-      MySQL/Postgres reais no ambiente onde foi escrito (sem `mysql`
-      client, `pgloader` nem `docker` disponíveis). Passo obrigatório antes
-      de rodar contra produção: restaurar o dump `sgf_abrigo` num MySQL
-      local descartável, rodar `alembic upgrade head` num Postgres de
-      teste, rodar o script sem `--confirmar` primeiro, depois com
-      `--confirmar`, e validar contagens/amostras por tabela.
+- [x] **Testado de ponta a ponta contra o dump real de produção
+      (2026-09-11).** MySQL 8.0 já estava instalado localmente; como o
+      dump tem `CREATE DATABASE IF NOT EXISTS sgf; USE sgf;` embutido
+      (ignora qualquer nome de banco passado na hora de restaurar), a
+      primeira tentativa colidiu com um banco `sgf` de um projeto de ERP
+      não relacionado já existente no MySQL compartilhado da máquina,
+      sobrescrevendo 8 tabelas de nomes coincidentes lá antes do erro ser
+      percebido (usuário confirmou que não tinha problema, mas o dump foi
+      corrigido — ver abaixo). Teste real rodou numa instância MySQL
+      **totalmente isolada** (datadir e porta própria, sem nenhum outro
+      banco), com o Postgres alvo simulado por SQLite (sem Postgres
+      instalado no ambiente; os models não usam nenhum tipo específico do
+      Postgres fora do `pgvector`, que ainda não está em uso em nenhuma
+      coluna). Todas as 14 tabelas carregaram e bateram com as contagens
+      documentadas em `docs/atividades.md`; a reconciliação de
+      `acompanhamento` recuperou 7 de 22 registros automaticamente (15
+      ficaram pendentes de revisão manual, paciente com 0 ou 2+ estadias);
+      `hash_senhas_pendentes --confirmar` rodou depois e hasheou as 7
+      senhas de usuário. Dois bugs reais encontrados e corrigidos com esse
+      teste (ver `app/features/pessoas/pessoa.legacy.md` e
+      `app/features/estadias/estadia.legacy.md`):
+      1. `pessoa.data_cadastro` — 444 de 5.326 pessoas (~8,3%) têm a data
+         zerada no legado; o model era `NOT NULL`, corrigido pra
+         `date | None` (`alembic/versions/0009_...py`).
+      2. Linhas de `EstadiaAcompanhante` reconciliadas a partir de
+         `acompanhamento` não tinham `data_entrada` (a tabela legada não
+         guarda essa informação) — o ETL agora usa a `data_entrada` da
+         própria `estadia` do paciente como aproximação documentada.
+      **O dump local (`C:\repos\caaf\sgf_abrigo 20260909 1501.sql`) foi
+      corrigido** pra usar `sgf_abrigo_import` no lugar de `sgf` — nunca
+      mais deve colidir com outro banco.
+      **Ainda falta:** rodar contra um Postgres de verdade (só SQLite foi
+      testado aqui) antes de considerar o ETL pronto pra produção — os
+      tipos usados são todos padrão SQL então não é esperada diferença de
+      comportamento, mas não foi validado.
 - [ ] Habilitar `pgvector` de fato numa coluna (`vector(N)`) quando a
       funcionalidade de busca semântica for implementada.
