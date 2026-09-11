@@ -85,6 +85,39 @@ mapeia isso pra `NULL` (não existe no Postgres), mas o model exigia
 (`alembic/versions/0009_pessoa_data_cadastro_nullable.py`). `data_nascimento`
 segue `NOT NULL` — 0 registros zerados nessa coluna no dado real.
 
+## Foto (feature nova, 2026-09-11)
+
+O legado capturava a foto da pessoa pela webcam na tela de manutenção
+(`untFrmManutencaoPessoa.pas`, componente DevExpress `TdxCameraControl`) e
+salvava como arquivo `.bmp` **em disco**, fora do banco — caminho
+`<pasta do executável>\pessoas\<id_pessoa>.bmp`, sem nenhuma coluna
+correspondente na tabela `pessoa` (confirmado no `CREATE TABLE` do dump —
+não existe `foto`/`caminho_imagem`). Havia também uma segunda tela,
+`untFrmConsultaEstadiaFoto.pas` ("Consulta com Foto" de Estadia), que lia
+os mesmos arquivos `.bmp` do disco só pra exibição num grid — não migrada
+ainda (ver gap conhecido em `abrigo-frontend/docs/atividades.md`).
+
+**Sem dado real pra migrar:** os arquivos ficavam na máquina onde o Delphi
+rodava, fora do dump de produção e do controle de versão — greenfield, não
+migração.
+
+**Decisão (2026-09-11, confirmada com o usuário):** foto vira **BLOB no
+Postgres** (`Pessoa.foto: bytes | None`, `LargeBinary`), não arquivo em
+disco nem storage externo — mais simples de operar (cai no mesmo backup do
+banco, sem pasta separada pra gerenciar) e adequado ao volume (uma foto
+pequena por pessoa, ~5.300 pessoas). `foto_content_type` guarda o mime type
+enviado pelo navegador (`image/jpeg`/`image/png`/`image/webp` — únicos
+aceitos, `service.TIPOS_FOTO_PERMITIDOS`), limite de 5MB por imagem
+(`service.TAMANHO_MAXIMO_FOTO_BYTES`).
+
+A foto **não entra** em `PessoaResponse`/`PessoaResumoResponse` como bytes
+(pesado demais pra listagem) — só um `tem_foto: bool` computado
+(`Pessoa.tem_foto`, property no model). Os bytes reais ficam atrás de
+endpoints próprios: `GET /api/pessoas/{id}/foto` (retorna a imagem crua,
+404 se não tiver), `PUT /api/pessoas/{id}/foto` (multipart/form-data,
+substitui a foto existente) e `DELETE /api/pessoas/{id}/foto` (remove).
+Migração `alembic/versions/0011_pessoa_foto.py`.
+
 ## Status:
 - Mapeado com campos reais. Endpoint de consulta (`GET /api/pessoas`) com
   busca por nome/CPF implementado. Cadastro/edição implementados no backend;

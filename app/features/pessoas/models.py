@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, String, Text
+from sqlalchemy import Date, ForeignKey, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -37,3 +37,16 @@ class Pessoa(Base):
     acompanhamento_social: Mapped[str | None] = mapped_column(Text, nullable=True)
     data_cadastro: Mapped[date | None] = mapped_column(Date, nullable=True)
     ativo: Mapped[bool] = mapped_column(default=True)
+
+    # Feature nova (2026-09-11) — o legado (`untFrmManutencaoPessoa.pas`)
+    # capturava a foto pela webcam e salvava como arquivo `.bmp` em disco
+    # (`pessoas\<id_pessoa>.bmp`, fora do banco), sem coluna correspondente
+    # na tabela `pessoa`. Não há dado real pra migrar (arquivos ficavam na
+    # máquina onde o Delphi rodava, fora do dump e do controle de versão) —
+    # aqui vira BLOB no próprio Postgres, sem exigir storage externo.
+    foto: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    foto_content_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    @property
+    def tem_foto(self) -> bool:
+        return self.foto is not None

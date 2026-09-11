@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -48,3 +49,35 @@ def inativar(pessoa_id: int, db: Session = Depends(get_db)) -> None:
     if pessoa is None:
         raise HTTPException(status_code=404, detail="Pessoa não encontrada")
     service.inativar(db, pessoa)
+
+
+@router.get("/{pessoa_id}/foto")
+def obter_foto(pessoa_id: int, db: Session = Depends(get_db)) -> Response:
+    pessoa = service.buscar(db, pessoa_id)
+    if pessoa is None or pessoa.foto is None:
+        raise HTTPException(status_code=404, detail="Foto não encontrada")
+    return Response(content=pessoa.foto, media_type=pessoa.foto_content_type or "image/jpeg")
+
+
+@router.put("/{pessoa_id}/foto", response_model=PessoaResponse)
+def salvar_foto(
+    pessoa_id: int, arquivo: UploadFile = File(...), db: Session = Depends(get_db)
+) -> PessoaResponse:
+    pessoa = service.buscar(db, pessoa_id)
+    if pessoa is None:
+        raise HTTPException(status_code=404, detail="Pessoa não encontrada")
+
+    conteudo = arquivo.file.read()
+    try:
+        pessoa = service.salvar_foto(db, pessoa, conteudo, arquivo.content_type)
+    except service.FotoInvalida as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PessoaResponse.model_validate(pessoa)
+
+
+@router.delete("/{pessoa_id}/foto", status_code=204)
+def remover_foto(pessoa_id: int, db: Session = Depends(get_db)) -> None:
+    pessoa = service.buscar(db, pessoa_id)
+    if pessoa is None:
+        raise HTTPException(status_code=404, detail="Pessoa não encontrada")
+    service.remover_foto(db, pessoa)

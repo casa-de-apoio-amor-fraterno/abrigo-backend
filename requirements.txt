@@ -7,3 +7,4 @@ pgvector>=0.3
 alembic>=1.14
 bcrypt>=4.2
 pyjwt>=2.9
+python-multipart>=0.0.12

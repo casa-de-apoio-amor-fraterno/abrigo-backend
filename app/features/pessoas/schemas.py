@@ -37,6 +37,7 @@ class PessoaResumoResponse(BaseModel):
     cpf: str | None
     telefone: str | None
     data_nascimento: date
+    tem_foto: bool
 
 
 class PessoaResponse(PessoaBase):
@@ -45,3 +46,4 @@ class PessoaResponse(PessoaBase):
     id: int
     ativo: bool
     data_cadastro: date | None
+    tem_foto: bool

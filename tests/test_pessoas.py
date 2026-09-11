@@ -100,3 +100,81 @@ def test_buscar_pessoa_inexistente(client):
     resposta = client.get("/api/pessoas/999")
 
     assert resposta.status_code == 404
+
+
+def _criar_pessoa(client, nome: str = "Foto Teste") -> int:
+    resposta = client.post(
+        "/api/pessoas",
+        json={"nome": nome, "data_nascimento": "1990-01-01"},
+    )
+    return resposta.json()["id"]
+
+
+def test_pessoa_sem_foto_tem_tem_foto_falso(client):
+    pessoa_id = _criar_pessoa(client)
+
+    resposta = client.get(f"/api/pessoas/{pessoa_id}")
+
+    assert resposta.json()["tem_foto"] is False
+
+
+def test_obter_foto_inexistente_retorna_404(client):
+    pessoa_id = _criar_pessoa(client)
+
+    resposta = client.get(f"/api/pessoas/{pessoa_id}/foto")
+
+    assert resposta.status_code == 404
+
+
+def test_salvar_e_obter_foto(client):
+    pessoa_id = _criar_pessoa(client)
+    conteudo = b"conteudo-fake-de-imagem"
+
+    resposta = client.put(
+        f"/api/pessoas/{pessoa_id}/foto",
+        files={"arquivo": ("foto.jpg", conteudo, "image/jpeg")},
+    )
+    assert resposta.status_code == 200
+    assert resposta.json()["tem_foto"] is True
+
+    resposta = client.get(f"/api/pessoas/{pessoa_id}/foto")
+    assert resposta.status_code == 200
+    assert resposta.headers["content-type"] == "image/jpeg"
+    assert resposta.content == conteudo
+
+
+def test_salvar_foto_formato_nao_suportado(client):
+    pessoa_id = _criar_pessoa(client)
+
+    resposta = client.put(
+        f"/api/pessoas/{pessoa_id}/foto",
+        files={"arquivo": ("foto.gif", b"abc", "image/gif")},
+    )
+
+    assert resposta.status_code == 400
+
+
+def test_salvar_foto_maior_que_limite(client):
+    pessoa_id = _criar_pessoa(client)
+    conteudo_grande = b"a" * (5 * 1024 * 1024 + 1)
+
+    resposta = client.put(
+        f"/api/pessoas/{pessoa_id}/foto",
+        files={"arquivo": ("foto.jpg", conteudo_grande, "image/jpeg")},
+    )
+
+    assert resposta.status_code == 400
+
+
+def test_remover_foto(client):
+    pessoa_id = _criar_pessoa(client)
+    client.put(
+        f"/api/pessoas/{pessoa_id}/foto",
+        files={"arquivo": ("foto.jpg", b"conteudo", "image/jpeg")},
+    )
+
+    resposta = client.delete(f"/api/pessoas/{pessoa_id}/foto")
+    assert resposta.status_code == 204
+
+    resposta = client.get(f"/api/pessoas/{pessoa_id}")
+    assert resposta.json()["tem_foto"] is False

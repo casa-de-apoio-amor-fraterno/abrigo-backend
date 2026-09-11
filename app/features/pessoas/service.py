@@ -41,3 +41,30 @@ def atualizar(db: Session, pessoa: Pessoa, dados: PessoaUpdate) -> Pessoa:
 def inativar(db: Session, pessoa: Pessoa) -> None:
     pessoa.ativo = False
     db.commit()
+
+
+TIPOS_FOTO_PERMITIDOS = {"image/jpeg", "image/png", "image/webp"}
+TAMANHO_MAXIMO_FOTO_BYTES = 5 * 1024 * 1024
+
+
+class FotoInvalida(Exception):
+    pass
+
+
+def salvar_foto(db: Session, pessoa: Pessoa, conteudo: bytes, content_type: str | None) -> Pessoa:
+    if content_type not in TIPOS_FOTO_PERMITIDOS:
+        raise FotoInvalida("Formato de imagem não suportado — envie JPEG, PNG ou WebP.")
+    if len(conteudo) > TAMANHO_MAXIMO_FOTO_BYTES:
+        raise FotoInvalida("Imagem maior que o limite permitido (5MB).")
+
+    pessoa.foto = conteudo
+    pessoa.foto_content_type = content_type
+    db.commit()
+    db.refresh(pessoa)
+    return pessoa
+
+
+def remover_foto(db: Session, pessoa: Pessoa) -> None:
+    pessoa.foto = None
+    pessoa.foto_content_type = None
+    db.commit()
