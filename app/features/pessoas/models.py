@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import Date, String, Text
+from sqlalchemy import Date, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -16,10 +16,6 @@ class Pessoa(Base):
     entidade de empréstimo), não aqui. Na migração de dados, o valor de
     `tipo` é lido do dump só para popular `estadia.tipo_pessoa` correspondente,
     depois descartado.
-
-    `id_hospital`, `id_municipio` e `id_estado` ficam como IDs simples por
-    enquanto — viram chave estrangeira de verdade quando essas tabelas forem
-    mapeadas (features `hospitais`, `municipios`, `estados`).
     """
 
     __tablename__ = "pessoa"
@@ -34,9 +30,9 @@ class Pessoa(Base):
     endereco: Mapped[str | None] = mapped_column(String(60), nullable=True)
     ponto_referencia: Mapped[str | None] = mapped_column(String(60), nullable=True)
     telefone: Mapped[str | None] = mapped_column(String(60), nullable=True)
-    id_hospital: Mapped[int | None] = mapped_column(nullable=True)
-    id_municipio: Mapped[int | None] = mapped_column(nullable=True)
-    id_estado: Mapped[int | None] = mapped_column(nullable=True)
+    id_hospital: Mapped[int | None] = mapped_column(ForeignKey("hospital.id_hospital"), nullable=True)
+    id_municipio: Mapped[int | None] = mapped_column(ForeignKey("municipio.id_municipio"), nullable=True)
+    id_estado: Mapped[int | None] = mapped_column(ForeignKey("estado.id_estado"), nullable=True)
     observacao: Mapped[str | None] = mapped_column(Text, nullable=True)
     acompanhamento_social: Mapped[str | None] = mapped_column(Text, nullable=True)
     data_cadastro: Mapped[date] = mapped_column(Date)

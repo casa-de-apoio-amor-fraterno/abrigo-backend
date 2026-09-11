@@ -18,3 +18,15 @@ def criar_token_acesso(usuario_id: int) -> str:
     expira_em = datetime.now(UTC) + timedelta(minutes=settings.jwt_expires_minutes)
     payload = {"sub": str(usuario_id), "exp": expira_em}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def decodificar_token(token: str) -> int | None:
+    try:
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+    except jwt.PyJWTError:
+        return None
+
+    try:
+        return int(payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        return None
