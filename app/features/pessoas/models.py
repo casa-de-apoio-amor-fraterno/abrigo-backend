@@ -35,5 +35,5 @@ class Pessoa(Base):
     id_estado: Mapped[int | None] = mapped_column(ForeignKey("estado.id_estado"), nullable=True)
     observacao: Mapped[str | None] = mapped_column(Text, nullable=True)
     acompanhamento_social: Mapped[str | None] = mapped_column(Text, nullable=True)
-    data_cadastro: Mapped[date] = mapped_column(Date)
+    data_cadastro: Mapped[date | None] = mapped_column(Date, nullable=True)
     ativo: Mapped[bool] = mapped_column(default=True)

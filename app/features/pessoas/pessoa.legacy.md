@@ -72,7 +72,22 @@ ficar restritas ao perfil de assistente social conforme anotado em
 - Regras de acesso: avaliação social e composição familiar só para
   assistente social (regra de negócio ainda não implementada no legado)
 
+## `data_cadastro` opcional (achado ao testar o ETL, 2026-09-10)
+
+O `CREATE TABLE` legado tem `data_cadastro date NOT NULL DEFAULT
+'0000-00-00'` — parecia seguro modelar como `date` obrigatório. Ao restaurar
+o dump real de produção pra testar `app/scripts/etl_migracao.py` de ponta a
+ponta, o ETL falhou: **444 de 5.326 pessoas (~8,3%) têm
+`data_cadastro = '0000-00-00'` de verdade** (o `DEFAULT` nunca foi
+substituído por um valor real nesses cadastros). `data_zerada_para_none`
+mapeia isso pra `NULL` (não existe no Postgres), mas o model exigia
+`NOT NULL`. Corrigido: `Pessoa.data_cadastro` agora é `date | None`
+(`alembic/versions/0009_pessoa_data_cadastro_nullable.py`). `data_nascimento`
+segue `NOT NULL` — 0 registros zerados nessa coluna no dado real.
+
 ## Status:
 - Mapeado com campos reais. Endpoint de consulta (`GET /api/pessoas`) com
   busca por nome/CPF implementado. Cadastro/edição implementados no backend;
-  tela de cadastro no frontend ainda não (só a consulta).
+  tela de cadastro no frontend ainda não (só a consulta). ETL testado de
+  ponta a ponta contra o dump real de produção (ver
+  `docs/migracao-postgres.md`).

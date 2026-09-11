@@ -97,10 +97,21 @@ def _reconciliar_acompanhamento(
 
     estadias = _ler_tabela(conexao_origem, "estadia")
     estadias_por_pessoa: dict[int, list[int]] = {}
+    data_entrada_por_estadia: dict[int, object] = {}
     for estadia in estadias:
         estadias_por_pessoa.setdefault(estadia["id_pessoa"], []).append(estadia["id_estadia"])
+        data_entrada_por_estadia[estadia["id_estadia"]] = t.datetime_zerado_para_none(
+            estadia["data_entrada"]
+        )
 
     resultado = reconciliar(registros_acompanhamento, estadias_por_pessoa)
+
+    # `acompanhamento` não guarda data — usa a `data_entrada` da própria
+    # estadia do paciente como aproximação (documentado em
+    # app/features/estadias/estadia.legacy.md), já que
+    # `EstadiaAcompanhante.data_entrada` é obrigatória.
+    for reconciliado in resultado.reconciliados:
+        reconciliado["data_entrada"] = data_entrada_por_estadia.get(reconciliado["id_estadia"])
 
     print(
         f"  acompanhamento -> estadia_acompanhante (reconciliado): "

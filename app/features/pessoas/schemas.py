@@ -44,4 +44,4 @@ class PessoaResponse(PessoaBase):
 
     id: int
     ativo: bool
-    data_cadastro: date
+    data_cadastro: date | None
