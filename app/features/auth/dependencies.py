@@ -27,6 +27,29 @@ def usuario_atual(
     return usuario
 
 
+def usuario_atual_opcional(
+    credenciais: HTTPAuthorizationCredentials | None = Depends(_esquema_bearer),
+    db: Session = Depends(get_db),
+) -> Usuario | None:
+    """Como `usuario_atual`, mas devolve `None` em vez de 401 quando não há
+    sessão — pra endpoints que normalmente não exigem login, mas precisam
+    saber quem é o usuário (se houver) pra decidir algo pontual (ver
+    `criar` em app/features/pessoas/router.py, que só checa perfil quando
+    o payload inclui composição familiar aninhada)."""
+    if credenciais is None:
+        return None
+
+    usuario_id = decodificar_token(credenciais.credentials)
+    if usuario_id is None:
+        return None
+
+    usuario = db.get(Usuario, usuario_id)
+    if usuario is None or not usuario.ativo:
+        return None
+
+    return usuario
+
+
 def exigir_perfil(*perfis: str):
     """Dependência que restringe um endpoint a um ou mais `Usuario.perfil`.
 

@@ -1,6 +1,12 @@
 from datetime import date
 
+from app.core.security import criar_token_acesso
 from app.features.pessoas.models import Pessoa
+
+
+def _auth_header(usuario) -> dict:
+    token = criar_token_acesso(usuario.id)
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_listar_vazio(client):
@@ -94,6 +100,78 @@ def test_criar_e_buscar_pessoa(client):
     assert resposta.status_code == 200
     assert resposta.json()["nome"] == "Ana Paula"
     assert resposta.json()["telefone_principal"] is None
+
+
+def test_criar_pessoa_com_contatos_aninhados(client):
+    resposta = client.post(
+        "/api/pessoas",
+        json={
+            "nome": "Fernanda Melo",
+            "data_nascimento": "1990-04-12",
+            "contatos": [
+                {"numero": "42999990000", "nome_contato": "Fernanda", "principal": True},
+                {"numero": "42988880000", "nome_contato": "Vizinha"},
+            ],
+        },
+    )
+    assert resposta.status_code == 201
+    pessoa_id = resposta.json()["id"]
+    assert resposta.json()["telefone_principal"] == "42999990000"
+
+    resposta = client.get(f"/api/pessoas/{pessoa_id}/contatos")
+    assert resposta.status_code == 200
+    contatos = resposta.json()
+    assert len(contatos) == 2
+    assert {c["numero"] for c in contatos} == {"42999990000", "42988880000"}
+
+
+def test_criar_pessoa_com_composicao_familiar_aninhada(client, usuario_legado):
+    resposta = client.post(
+        "/api/pessoas",
+        json={
+            "nome": "Carla Souza",
+            "data_nascimento": "1988-07-10",
+            "composicao_familiar": [
+                {"nome": "Pedro Souza", "grau_parentesco": "Filho", "idade": "5 anos"}
+            ],
+        },
+        headers=_auth_header(usuario_legado),
+    )
+    assert resposta.status_code == 201
+    pessoa_id = resposta.json()["id"]
+
+    resposta = client.get(
+        f"/api/pessoas/{pessoa_id}/composicao-familiar", headers=_auth_header(usuario_legado)
+    )
+    assert resposta.status_code == 200
+    membros = resposta.json()
+    assert len(membros) == 1
+    assert membros[0]["nome"] == "Pedro Souza"
+
+
+def test_criar_pessoa_com_composicao_familiar_sem_token_retorna_403(client):
+    resposta = client.post(
+        "/api/pessoas",
+        json={
+            "nome": "Denise Lima",
+            "data_nascimento": "1992-02-02",
+            "composicao_familiar": [{"nome": "Filho", "grau_parentesco": "Filho"}],
+        },
+    )
+    assert resposta.status_code == 403
+
+
+def test_criar_pessoa_com_composicao_familiar_perfil_errado_retorna_403(client, usuario_migrado):
+    resposta = client.post(
+        "/api/pessoas",
+        json={
+            "nome": "Elis Regina",
+            "data_nascimento": "1991-01-01",
+            "composicao_familiar": [{"nome": "Filho", "grau_parentesco": "Filho"}],
+        },
+        headers=_auth_header(usuario_migrado),
+    )
+    assert resposta.status_code == 403
 
 
 def test_contatos_de_pessoa(client):

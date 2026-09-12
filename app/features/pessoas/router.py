@@ -3,6 +3,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.features.auth.dependencies import usuario_atual_opcional
 from app.features.pessoas import service
 from app.features.pessoas.schemas import (
     PessoaContatoCreate,
@@ -13,6 +14,7 @@ from app.features.pessoas.schemas import (
     PessoaResumoResponse,
     PessoaUpdate,
 )
+from app.features.usuarios.models import Usuario
 
 router = APIRouter()
 
@@ -34,7 +36,18 @@ def buscar(pessoa_id: int, db: Session = Depends(get_db)) -> PessoaResponse:
 
 
 @router.post("", response_model=PessoaResponse, status_code=201)
-def criar(dados: PessoaCreate, db: Session = Depends(get_db)) -> PessoaResponse:
+def criar(
+    dados: PessoaCreate,
+    usuario: Usuario | None = Depends(usuario_atual_opcional),
+    db: Session = Depends(get_db),
+) -> PessoaResponse:
+    # Criar pessoa não exige login (nunca exigiu). Composição familiar é
+    # que é dado sensível (ver app/features/composicao_familiar/router.py,
+    # `exigir_perfil`) — mesma trava aqui, só quando ela chega aninhada
+    # nesse POST, pra não quebrar o caso comum (sem composição familiar)
+    # que sempre funcionou sem autenticação.
+    if dados.composicao_familiar and (usuario is None or usuario.perfil != "Assistente Social"):
+        raise HTTPException(status_code=403, detail="Acesso restrito a este perfil")
     return PessoaResponse.model_validate(service.criar(db, dados))
 
 

@@ -3,6 +3,7 @@ from datetime import date
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.features.composicao_familiar.models import ComposicaoFamiliar
 from app.features.pessoas.models import Pessoa, PessoaContato
 from app.features.pessoas.schemas import (
     PessoaContatoCreate,
@@ -28,8 +29,17 @@ def buscar(db: Session, pessoa_id: int) -> Pessoa | None:
 
 
 def criar(db: Session, dados: PessoaCreate) -> Pessoa:
-    pessoa = Pessoa(**dados.model_dump(), data_cadastro=date.today())
+    campos_pessoa = dados.model_dump(exclude={"composicao_familiar", "contatos"})
+    pessoa = Pessoa(**campos_pessoa, data_cadastro=date.today())
     db.add(pessoa)
+    db.flush()  # gera pessoa.id sem fechar a transação, pra usar como FK abaixo
+
+    for membro in dados.composicao_familiar:
+        db.add(ComposicaoFamiliar(id_pessoa=pessoa.id, **membro.model_dump()))
+
+    for contato in dados.contatos:
+        db.add(PessoaContato(id_pessoa=pessoa.id, **contato.model_dump()))
+
     db.commit()
     db.refresh(pessoa)
     return pessoa
