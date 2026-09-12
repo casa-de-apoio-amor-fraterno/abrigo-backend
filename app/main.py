@@ -13,6 +13,7 @@ from app.features.materiais.router import router as materiais_router
 from app.features.municipios.router import router as municipios_router
 from app.features.pessoas.router import router as pessoas_router
 from app.features.quartos.router import router as quartos_router
+from app.features.solicitacoes_cadastro.router import router as solicitacoes_cadastro_router
 from app.features.voluntarios.router import router as voluntarios_router
 
 app = FastAPI(title="Abrigo — Casa de Apoio Amor Fraterno", version="0.1.0")
@@ -35,6 +36,11 @@ app.include_router(estadias_router, prefix="/api/estadias", tags=["estadias"])
 app.include_router(voluntarios_router, prefix="/api/voluntarios", tags=["voluntarios"])
 app.include_router(materiais_router, prefix="/api/materiais", tags=["materiais"])
 app.include_router(emprestimos_router, prefix="/api/emprestimos", tags=["emprestimos"])
+app.include_router(
+    solicitacoes_cadastro_router,
+    prefix="/api/solicitacoes-cadastro",
+    tags=["solicitacoes-cadastro"],
+)
 app.include_router(
     avaliacao_social_router,
     prefix="/api/pessoas/{pessoa_id}/avaliacoes-sociais",
