@@ -161,11 +161,14 @@ def transformar_municipio(linha: dict) -> dict:
 
 
 def transformar_quarto(linha: dict) -> dict:
+    # `leito` é varchar sujo no legado (ex.: '2 leitos', '00003', '04') —
+    # extrai só os dígitos e converte pra int, mesma regra da migração
+    # 0016_quarto_leito_integer (ver quarto.legacy.md).
     return {
         "id": linha["id_quarto"],
         "descricao": texto_ou_none(linha["descricao"]),
         "numero": linha["numero"],
-        "leito": linha["leito"],
+        "leito": int(_somente_digitos(linha["leito"])),
         "ativo": sim_nao_para_bool(linha["ativo"]),
     }
 

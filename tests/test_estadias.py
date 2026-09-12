@@ -8,7 +8,7 @@ from app.features.usuarios.models import Usuario
 
 def _criar_dependencias(db_session) -> dict:
     pessoa = Pessoa(nome="Maria da Silva", data_nascimento=date(1990, 1, 1), data_cadastro=date.today())
-    quarto = Quarto(numero="11", leito="04")
+    quarto = Quarto(numero="11", leito=4)
     usuario = Usuario(login="joana", nome="Joana", perfil="geral", senha="123456")
     db_session.add_all([pessoa, quarto, usuario])
     db_session.commit()

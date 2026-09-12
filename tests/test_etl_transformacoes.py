@@ -11,6 +11,7 @@ from app.scripts.etl.transformacoes import (
     transformar_hospital,
     transformar_material,
     transformar_pessoa,
+    transformar_quarto,
     transformar_usuario,
     transformar_voluntario,
 )
@@ -30,6 +31,16 @@ def test_sim_nao_para_bool_com_espacos_nas_pontas():
     comum de 'Sim '/' Não'."""
     assert sim_nao_para_bool("Sim ") is True
     assert sim_nao_para_bool(" Não") is False
+
+
+def test_transformar_quarto_extrai_digitos_do_leito_sujo():
+    # Dado real do dump: 'leito' varchar sujo — '2 leitos', '00003', '04'.
+    linha_base = {"id_quarto": 1, "descricao": None, "numero": "11", "ativo": "Sim"}
+
+    assert transformar_quarto({**linha_base, "leito": "2 leitos"})["leito"] == 2
+    assert transformar_quarto({**linha_base, "leito": "00003"})["leito"] == 3
+    assert transformar_quarto({**linha_base, "leito": "04"})["leito"] == 4
+    assert transformar_quarto({**linha_base, "leito": "1"})["leito"] == 1
 
 
 def test_data_zerada_para_none():
