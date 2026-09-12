@@ -11,30 +11,6 @@ class EmprestimoBase(BaseModel):
     observacao: str | None = None
 
 
-class EmprestimoCreate(EmprestimoBase):
-    pass
-
-
-class EmprestimoUpdate(EmprestimoBase):
-    pass
-
-
-class EmprestimoResumoResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    id_pessoa: int
-    situacao: str
-    numero_contrato: str | None
-
-
-class EmprestimoResponse(EmprestimoBase):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    ativo: bool
-
-
 class EmprestimoItemBase(BaseModel):
     id_material: int
     data_emprestimo: date | None = None
@@ -59,6 +35,38 @@ class EmprestimoItemResponse(EmprestimoItemBase):
 
     id: int
     id_emprestimo: int
+    # Gravada automaticamente pelo backend quando `situacao` vira
+    # "Devolvido" (ver service.py) — não é aceita como input do cliente,
+    # ao contrário de `data_devolucao` (prevista, digitada manualmente).
+    data_devolucao_efetiva: date | None
+
+
+class EmprestimoCreate(EmprestimoBase):
+    # Itens aninhados: o empréstimo ainda não existe pra usar o sub-recurso
+    # próprio (POST /emprestimos/{id}/itens), então o front manda os itens
+    # junto na criação e o service grava tudo numa transação só (mesmo
+    # padrão de `PessoaCreate.composicao_familiar`).
+    itens: list[EmprestimoItemCreate] = []
+
+
+class EmprestimoUpdate(EmprestimoBase):
+    pass
+
+
+class EmprestimoResumoResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    id_pessoa: int
+    situacao: str
+    numero_contrato: str | None
+
+
+class EmprestimoResponse(EmprestimoBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    ativo: bool
 
 
 class EmprestimoHistoricoResponse(BaseModel):

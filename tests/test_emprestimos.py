@@ -41,6 +41,40 @@ def test_criar_e_buscar_emprestimo(client, db_session):
     assert resposta.json()["ativo"] is True
 
 
+def test_criar_emprestimo_com_itens_aninhados(client, db_session):
+    deps = _criar_dependencias(db_session)
+
+    resposta = client.post(
+        "/api/emprestimos",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+            "itens": [
+                {
+                    "id_material": deps["material"].id,
+                    "id_usuario": deps["usuario"].id,
+                    "data_emprestimo": "2026-01-10",
+                    "situacao": "Emprestado",
+                }
+            ],
+        },
+    )
+    assert resposta.status_code == 201
+    emprestimo_id = resposta.json()["id"]
+
+    resposta = client.get(f"/api/emprestimos/{emprestimo_id}/itens")
+    assert resposta.status_code == 200
+    itens = resposta.json()
+    assert len(itens) == 1
+    assert itens[0]["id_material"] == deps["material"].id
+    assert itens[0]["situacao"] == "Emprestado"
+
+    resposta = client.get(f"/api/emprestimos/{emprestimo_id}/historico")
+    tipos = {h["tipo"] for h in resposta.json()}
+    assert tipos == {"Inclusão", "Item incluído"}
+
+
 def test_listar_filtrado_por_situacao(client, db_session):
     deps = _criar_dependencias(db_session)
     db_session.add_all(
@@ -132,6 +166,41 @@ def test_atualizar_item_marcando_devolucao(client, db_session):
     assert resposta.status_code == 200
     assert resposta.json()["situacao"] == "Devolvido"
     assert resposta.json()["data_devolucao"] == "2026-02-10"
+    assert resposta.json()["data_devolucao_efetiva"] == date.today().isoformat()
+
+
+def test_data_devolucao_efetiva_e_limpa_se_situacao_deixa_de_ser_devolvido(client, db_session):
+    deps = _criar_dependencias(db_session)
+    resposta = client.post(
+        "/api/emprestimos",
+        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+    )
+    emprestimo_id = resposta.json()["id"]
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/itens",
+        json={
+            "id_material": deps["material"].id,
+            "id_usuario": deps["usuario"].id,
+            "data_emprestimo": "2026-01-10",
+            "data_devolucao": "2026-02-10",
+            "situacao": "Devolvido",
+        },
+    )
+    item_id = resposta.json()["id"]
+    assert resposta.json()["data_devolucao_efetiva"] == date.today().isoformat()
+
+    resposta = client.put(
+        f"/api/emprestimos/{emprestimo_id}/itens/{item_id}",
+        json={
+            "id_material": deps["material"].id,
+            "id_usuario": deps["usuario"].id,
+            "data_emprestimo": "2026-01-10",
+            "data_devolucao": "2026-02-10",
+            "situacao": "Renovado",
+        },
+    )
+    assert resposta.status_code == 200
+    assert resposta.json()["data_devolucao_efetiva"] is None
 
 
 def test_item_de_outro_emprestimo_retorna_404(client, db_session):

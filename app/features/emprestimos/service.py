@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -30,14 +30,30 @@ def _registrar_historico(
     db.commit()
 
 
+def _aplicar_devolucao_efetiva(item: EmprestimoItem) -> None:
+    # `data_devolucao` é prevista (digitada manualmente, ver models.py);
+    # `data_devolucao_efetiva` é gravada aqui, automaticamente, só quando o
+    # item passa a "Devolvido" — e limpa se a situação for corrigida pra
+    # outra coisa depois.
+    if item.situacao == "Devolvido":
+        if item.data_devolucao_efetiva is None:
+            item.data_devolucao_efetiva = date.today()
+    else:
+        item.data_devolucao_efetiva = None
+
+
 def _descricao_item(db: Session, item: EmprestimoItem) -> str:
     material = db.get(Material, item.id_material)
     descricao_material = material.descricao if material else f"material #{item.id_material}"
     data_emprestimo = item.data_emprestimo.strftime("%d/%m/%Y") if item.data_emprestimo else "-"
     data_devolucao = item.data_devolucao.strftime("%d/%m/%Y") if item.data_devolucao else "-"
+    data_devolucao_efetiva = (
+        item.data_devolucao_efetiva.strftime("%d/%m/%Y") if item.data_devolucao_efetiva else "-"
+    )
     return (
         f"{descricao_material} (situação: {item.situacao or '-'}, "
-        f"data empréstimo: {data_emprestimo}, data devolução: {data_devolucao})"
+        f"data empréstimo: {data_emprestimo}, data devolução prevista: {data_devolucao}, "
+        f"data devolução efetiva: {data_devolucao_efetiva})"
     )
 
 
@@ -64,11 +80,34 @@ def buscar(db: Session, emprestimo_id: int) -> Emprestimo | None:
 
 
 def criar(db: Session, dados: EmprestimoCreate) -> Emprestimo:
-    emprestimo = Emprestimo(**dados.model_dump())
+    campos_emprestimo = dados.model_dump(exclude={"itens"})
+    emprestimo = Emprestimo(**campos_emprestimo)
     db.add(emprestimo)
+    db.flush()  # gera emprestimo.id sem fechar a transação, pra usar como FK abaixo
+
+    itens_criados = []
+    for item_dados in dados.itens:
+        item = EmprestimoItem(
+            id_emprestimo=emprestimo.id, **item_dados.model_dump(exclude={"id_usuario"})
+        )
+        _aplicar_devolucao_efetiva(item)
+        db.add(item)
+        itens_criados.append((item, item_dados.id_usuario))
+
     db.commit()
     db.refresh(emprestimo)
     _registrar_historico(db, emprestimo.id, dados.id_usuario, "Inclusão", "Cadastro do registro.")
+
+    for item, id_usuario_item in itens_criados:
+        db.refresh(item)
+        _registrar_historico(
+            db,
+            emprestimo.id,
+            id_usuario_item,
+            "Item incluído",
+            f"Item incluído: {_descricao_item(db, item)}",
+        )
+
     return emprestimo
 
 
@@ -111,6 +150,7 @@ def adicionar_item(db: Session, emprestimo_id: int, dados: EmprestimoItemCreate)
     item = EmprestimoItem(
         id_emprestimo=emprestimo_id, **dados.model_dump(exclude={"id_usuario"})
     )
+    _aplicar_devolucao_efetiva(item)
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -129,6 +169,7 @@ def atualizar_item(
 ) -> EmprestimoItem:
     for campo, valor in dados.model_dump(exclude={"id_usuario"}).items():
         setattr(item, campo, valor)
+    _aplicar_devolucao_efetiva(item)
     db.commit()
     db.refresh(item)
     _registrar_historico(

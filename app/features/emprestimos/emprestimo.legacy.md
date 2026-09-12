@@ -23,11 +23,33 @@ obrigatório, default `'Sim'` — modelado como `boolean`).
 
 `id_emprestimo_item` (int, PK), `id_emprestimo`/`id_material` (int, FK
 reais já no legado), `data_emprestimo` (date, opcional), `data_devolucao`
-(date, opcional), `situacao` (varchar(60), opcional — texto livre, ex.:
-`'Devolvido'`), `renovacao` (varchar(60), opcional — **texto livre, não é
-data nem boolean**; dado real tem valores como `'até 22/03/2019 até
-22/05/2019 Devolvido 02/07/2019'` — histórico de renovações registrado
-manualmente em texto corrido, mantido fiel ao dado real).
+(date, opcional), `situacao` (varchar(60), opcional — texto livre, valores
+observados: `'Pendente'`, `'Renovado'`, `'Devolvido'` — 3 estados reais no
+Delphi (`CasaApoio.Material.Constants.pas`), não só 2 como o comentário
+original do model dizia), `renovacao` (varchar(60), opcional — **texto
+livre, não é data nem boolean**; dado real tem valores como `'até
+22/03/2019 até 22/05/2019 Devolvido 02/07/2019'` — histórico de renovações
+registrado manualmente em texto corrido, mantido fiel ao dado real).
+
+**`data_devolucao` é prevista, não efetiva (achado 2026-09-11).** No
+legado (`untFrmManutencaoEmprestimo`), o campo é digitado manualmente no
+mesmo formulário e no mesmo momento que `data_emprestimo`, ao lado do
+combo de `situacao` — não existe nenhum fluxo que a atualize quando o item
+é devolvido de fato. Confirmado com dado real (`abrigo_teste`): havia 87
+itens com `situacao='Pendente'` (ainda emprestados) e `data_devolucao` já
+no passado, o que só é possível se o campo for uma previsão que venceu, não
+um registro do que já aconteceu. Adicionada `data_devolucao_efetiva`
+(coluna nova, sem equivalente no legado, migração `0014`), gravada
+automaticamente pelo backend (`service.py`,
+`_aplicar_devolucao_efetiva`) com a data de hoje na primeira vez que
+`situacao` vira `'Devolvido'`, e limpa se a situação for corrigida depois
+pra outra coisa. Para os ~3.265 itens já `'Devolvido'` migrados do legado,
+a migração faz backfill usando a própria `data_devolucao` como
+aproximação (não há como saber a data real retroativamente) — deixa claro
+no comentário da migração que é só uma estimativa. Frontend: label do
+campo original virou "Data prevista de devolução"; "Data efetiva da
+devolução" aparece como campo só leitura na edição do item, e ambas
+aparecem separadas na listagem e no histórico de alteração.
 
 Um empréstimo pode ter vários itens (`emprestimo_item`), cada um associado
 a um `material` diferente — por isso `EmprestimoItem` é modelada como

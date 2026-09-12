@@ -34,6 +34,17 @@ class EmprestimoItem(Base):
     `renovacao` é texto livre no legado (ex.: `'até 22/03/2019 até
     22/05/2019 Devolvido 02/07/2019'`) — não uma data ou boolean, mantido
     como `String`.
+
+    `data_devolucao` é **prevista**, não efetiva: no legado
+    (`untFrmManutencaoEmprestimo`) ela é digitada manualmente no mesmo
+    formulário e no mesmo momento que `data_emprestimo`, junto do combo de
+    `situacao` — não existe nenhum fluxo que a atualize quando o item é
+    devolvido de fato. Confirmado com dado real (`abrigo_teste`): havia
+    itens com `situacao='Pendente'` (ainda emprestados) e `data_devolucao`
+    no passado, o que só é possível se o campo for uma previsão, não um
+    registro do que já aconteceu. `data_devolucao_efetiva` (nova, sem
+    equivalente no legado) é gravada automaticamente pelo backend quando
+    `situacao` passa a `'Devolvido'` — ver `service.py`.
     """
 
     __tablename__ = "emprestimo_item"
@@ -43,6 +54,7 @@ class EmprestimoItem(Base):
     id_material: Mapped[int] = mapped_column(ForeignKey("material.id_material"))
     data_emprestimo: Mapped[date | None] = mapped_column(Date, nullable=True)
     data_devolucao: Mapped[date | None] = mapped_column(Date, nullable=True)
+    data_devolucao_efetiva: Mapped[date | None] = mapped_column(Date, nullable=True)
     situacao: Mapped[str | None] = mapped_column(String(60), nullable=True)
     renovacao: Mapped[str | None] = mapped_column(String(60), nullable=True)
 
