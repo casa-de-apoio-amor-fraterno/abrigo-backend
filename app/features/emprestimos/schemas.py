@@ -53,6 +53,13 @@ class EmprestimoUpdate(EmprestimoBase):
     pass
 
 
+class EmprestimoDevolverRequest(BaseModel):
+    # Quem registrou a devolução — usado só para gravar
+    # `EmprestimoHistorico` (mesmo padrão de `EmprestimoItemCreate.id_usuario`).
+    id_usuario: int
+    data_devolucao: date | None = None
+
+
 class EmprestimoResumoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

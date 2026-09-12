@@ -379,6 +379,135 @@ def test_adicionar_item_registra_historico(client, db_session):
     assert "situação: Emprestado" in item_incluido["observacao"]
 
 
+def test_devolver_marca_emprestimo_itens_e_libera_material(client, db_session):
+    deps = _criar_dependencias(db_session)
+    resposta = client.post(
+        "/api/emprestimos",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+            "itens": [
+                {
+                    "id_material": deps["material"].id,
+                    "id_usuario": deps["usuario"].id,
+                    "data_emprestimo": "2026-01-10",
+                    "situacao": "Pendente",
+                }
+            ],
+        },
+    )
+    emprestimo_id = resposta.json()["id"]
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/devolver",
+        json={"id_usuario": deps["usuario"].id, "data_devolucao": "2026-02-15"},
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["situacao"] == "Devolvido"
+
+    itens = client.get(f"/api/emprestimos/{emprestimo_id}/itens").json()
+    assert itens[0]["situacao"] == "Devolvido"
+    assert itens[0]["data_devolucao_efetiva"] == "2026-02-15"
+
+    material = client.get(f"/api/materiais/{deps['material'].id}").json()
+    assert material["situacao"] == "Disponível"
+    assert material["local"] == "Casa"
+    assert material["disponivel_emprestimo"] is True
+
+    historico = client.get(f"/api/emprestimos/{emprestimo_id}/historico").json()
+    item_alterado = next(h for h in historico if h["tipo"] == "Item alterado")
+    assert "situação: Devolvido" in item_alterado["observacao"]
+
+
+def test_devolver_sem_data_usa_hoje(client, db_session):
+    deps = _criar_dependencias(db_session)
+    resposta = client.post(
+        "/api/emprestimos",
+        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+    )
+    emprestimo_id = resposta.json()["id"]
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/devolver", json={"id_usuario": deps["usuario"].id}
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["situacao"] == "Devolvido"
+
+
+def test_devolver_nao_reativa_material_ja_baixado(client, db_session):
+    deps = _criar_dependencias(db_session)
+    deps["material"].situacao = "Baixado"
+    db_session.commit()
+
+    resposta = client.post(
+        "/api/emprestimos",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+            "itens": [
+                {
+                    "id_material": deps["material"].id,
+                    "id_usuario": deps["usuario"].id,
+                    "situacao": "Pendente",
+                }
+            ],
+        },
+    )
+    emprestimo_id = resposta.json()["id"]
+
+    client.post(f"/api/emprestimos/{emprestimo_id}/devolver", json={"id_usuario": deps["usuario"].id})
+
+    material = client.get(f"/api/materiais/{deps['material'].id}").json()
+    assert material["situacao"] == "Baixado"
+
+
+def test_devolver_ignora_itens_ja_devolvidos(client, db_session):
+    deps = _criar_dependencias(db_session)
+    resposta = client.post(
+        "/api/emprestimos",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+            "itens": [
+                {
+                    "id_material": deps["material"].id,
+                    "id_usuario": deps["usuario"].id,
+                    "situacao": "Devolvido",
+                    "data_devolucao": "2026-01-01",
+                }
+            ],
+        },
+    )
+    emprestimo_id = resposta.json()["id"]
+    item_id = client.get(f"/api/emprestimos/{emprestimo_id}/itens").json()[0]["id"]
+    data_efetiva_original = client.get(f"/api/emprestimos/{emprestimo_id}/itens").json()[0][
+        "data_devolucao_efetiva"
+    ]
+
+    client.post(
+        f"/api/emprestimos/{emprestimo_id}/devolver",
+        json={"id_usuario": deps["usuario"].id, "data_devolucao": "2026-03-01"},
+    )
+
+    item = client.get(f"/api/emprestimos/{emprestimo_id}/itens").json()[0]
+    assert item["id"] == item_id
+    assert item["data_devolucao_efetiva"] == data_efetiva_original
+
+    historico = client.get(f"/api/emprestimos/{emprestimo_id}/historico").json()
+    assert not any(h["tipo"] == "Item alterado" for h in historico)
+
+
+def test_devolver_emprestimo_inexistente_retorna_404(client):
+    resposta = client.post("/api/emprestimos/999/devolver", json={"id_usuario": 1})
+
+    assert resposta.status_code == 404
+
+
 def test_atualizar_item_registra_historico(client, db_session):
     deps = _criar_dependencias(db_session)
     resposta = client.post(

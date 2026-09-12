@@ -25,6 +25,10 @@ class EstadiaUpdate(EstadiaBase):
     pass
 
 
+class EstadiaEncerrarRequest(BaseModel):
+    data_saida: datetime | None = None
+
+
 class EstadiaResumoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

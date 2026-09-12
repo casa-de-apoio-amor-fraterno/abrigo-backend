@@ -5,6 +5,7 @@ from app.core.database import get_db
 from app.features.emprestimos import service
 from app.features.emprestimos.schemas import (
     EmprestimoCreate,
+    EmprestimoDevolverRequest,
     EmprestimoHistoricoResponse,
     EmprestimoItemCreate,
     EmprestimoItemResponse,
@@ -58,6 +59,18 @@ def inativar(emprestimo_id: int, db: Session = Depends(get_db)) -> None:
     if emprestimo is None:
         raise HTTPException(status_code=404, detail="Empréstimo não encontrado")
     service.inativar(db, emprestimo)
+
+
+@router.post("/{emprestimo_id}/devolver", response_model=EmprestimoResponse)
+def devolver(
+    emprestimo_id: int, dados: EmprestimoDevolverRequest, db: Session = Depends(get_db)
+) -> EmprestimoResponse:
+    emprestimo = service.buscar(db, emprestimo_id)
+    if emprestimo is None:
+        raise HTTPException(status_code=404, detail="Empréstimo não encontrado")
+    return EmprestimoResponse.model_validate(
+        service.devolver(db, emprestimo, dados.id_usuario, dados.data_devolucao)
+    )
 
 
 @router.get("/{emprestimo_id}/itens", response_model=list[EmprestimoItemResponse])

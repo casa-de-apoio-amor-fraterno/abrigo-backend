@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -49,8 +51,9 @@ def atualizar(db: Session, estadia: Estadia, dados: EstadiaUpdate) -> Estadia:
     return estadia
 
 
-def encerrar(db: Session, estadia: Estadia) -> Estadia:
+def encerrar(db: Session, estadia: Estadia, data_saida: datetime | None = None) -> Estadia:
     estadia.situacao = SituacaoEstadia.FINALIZADA
+    estadia.data_saida = data_saida or datetime.now(UTC).replace(tzinfo=None)
     estadia.ativo = False
     db.commit()
     db.refresh(estadia)

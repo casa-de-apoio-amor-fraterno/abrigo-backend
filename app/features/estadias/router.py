@@ -8,6 +8,7 @@ from app.features.estadias.schemas import (
     EstadiaAcompanhanteCreate,
     EstadiaAcompanhanteResponse,
     EstadiaCreate,
+    EstadiaEncerrarRequest,
     EstadiaResponse,
     EstadiaResumoResponse,
     EstadiaUpdate,
@@ -50,11 +51,15 @@ def atualizar(estadia_id: int, dados: EstadiaUpdate, db: Session = Depends(get_d
 
 
 @router.post("/{estadia_id}/encerrar", response_model=EstadiaResponse)
-def encerrar(estadia_id: int, db: Session = Depends(get_db)) -> EstadiaResponse:
+def encerrar(
+    estadia_id: int,
+    dados: EstadiaEncerrarRequest = EstadiaEncerrarRequest(),
+    db: Session = Depends(get_db),
+) -> EstadiaResponse:
     estadia = service.buscar(db, estadia_id)
     if estadia is None:
         raise HTTPException(status_code=404, detail="Estadia não encontrada")
-    return EstadiaResponse.model_validate(service.encerrar(db, estadia))
+    return EstadiaResponse.model_validate(service.encerrar(db, estadia, dados.data_saida))
 
 
 @router.get("/{estadia_id}/acompanhantes", response_model=list[EstadiaAcompanhanteResponse])

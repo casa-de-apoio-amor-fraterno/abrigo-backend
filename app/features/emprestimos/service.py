@@ -178,6 +178,43 @@ def atualizar_item(
     return item
 
 
+def devolver(
+    db: Session, emprestimo: Emprestimo, id_usuario: int, data_devolucao: date | None = None
+) -> Emprestimo:
+    # Devolução em massa: marca o empréstimo e todos os itens ainda não
+    # devolvidos como "Devolvido", e libera cada material associado — mesma
+    # regra do legado (`AtualizarSituacaoMaterial` em
+    # untDtmManutencaoEmprestimo.pas), que só não libera material já
+    # "Baixado" (baixa é definitiva, não é desfeita por uma devolução).
+    data_efetiva = data_devolucao or date.today()
+    itens = list(
+        db.scalars(select(EmprestimoItem).where(EmprestimoItem.id_emprestimo == emprestimo.id)).all()
+    )
+
+    itens_devolvidos = [item for item in itens if item.situacao != "Devolvido"]
+    for item in itens_devolvidos:
+        item.situacao = "Devolvido"
+        item.data_devolucao_efetiva = data_efetiva
+
+        material = db.get(Material, item.id_material)
+        if material is not None and material.situacao != "Baixado":
+            material.situacao = "Disponível"
+            material.local = "Casa"
+            material.disponivel_emprestimo = True
+
+    emprestimo.situacao = "Devolvido"
+    db.commit()
+    db.refresh(emprestimo)
+
+    for item in itens_devolvidos:
+        db.refresh(item)
+        _registrar_historico(
+            db, emprestimo.id, id_usuario, "Item alterado", f"Item alterado: {_descricao_item(db, item)}"
+        )
+
+    return emprestimo
+
+
 def listar_historico(db: Session, emprestimo_id: int) -> list[EmprestimoHistorico]:
     consulta = select(EmprestimoHistorico).where(EmprestimoHistorico.id_emprestimo == emprestimo_id)
     return list(db.scalars(consulta.order_by(EmprestimoHistorico.data_cadastro.desc())).all())
