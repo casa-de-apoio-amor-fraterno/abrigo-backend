@@ -1,4 +1,9 @@
+from datetime import date, datetime
+
+from app.features.estadias.models import Estadia, SituacaoEstadia
+from app.features.pessoas.models import Pessoa
 from app.features.quartos.models import Quarto
+from app.features.usuarios.models import Usuario
 
 
 def test_listar_vazio(client):
@@ -97,3 +102,72 @@ def test_criar_quarto_rejeita_leito_nao_numerico(client):
     resposta = client.post("/api/quartos", json={"numero": "22", "leito": "2 leitos"})
 
     assert resposta.status_code == 422
+
+
+def test_listar_ocupacao(client, db_session):
+    # Quarto de 1 leito com 3 estadias "Em acompanhamento" — cenário real
+    # (achado 2026-09-12): só a mais recente conta como ocupante, as outras
+    # duas (mais antigas, provavelmente esquecidas sem finalizar) viram
+    # pendentes_revisao.
+    pessoa = Pessoa(nome="Maria da Silva", data_nascimento=date(1990, 1, 1), data_cadastro=date.today())
+    usuario = Usuario(login="joana", nome="Joana", perfil="geral", senha="123456")
+    quarto_com_excedente = Quarto(numero="11", leito=1, ativo=True)
+    quarto_vazio = Quarto(numero="12", leito=3, ativo=True)
+    quarto_inativo = Quarto(numero="99", leito=1, ativo=False)
+    db_session.add_all([pessoa, usuario, quarto_com_excedente, quarto_vazio, quarto_inativo])
+    db_session.commit()
+    db_session.refresh(pessoa)
+    db_session.refresh(usuario)
+    db_session.refresh(quarto_com_excedente)
+
+    db_session.add_all(
+        [
+            Estadia(
+                id_pessoa=pessoa.id,
+                id_quarto=quarto_com_excedente.id,
+                id_usuario=usuario.id,
+                data_entrada=datetime(2018, 11, 17),
+                situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+            ),
+            Estadia(
+                id_pessoa=pessoa.id,
+                id_quarto=quarto_com_excedente.id,
+                id_usuario=usuario.id,
+                data_entrada=datetime(2020, 3, 1),
+                situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+            ),
+            Estadia(
+                id_pessoa=pessoa.id,
+                id_quarto=quarto_com_excedente.id,
+                id_usuario=usuario.id,
+                data_entrada=datetime(2026, 1, 3),
+                situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+            ),
+            # Finalizada não conta pra ocupação nem pra pendentes.
+            Estadia(
+                id_pessoa=pessoa.id,
+                id_quarto=quarto_com_excedente.id,
+                id_usuario=usuario.id,
+                data_entrada=datetime(2026, 1, 4),
+                situacao=SituacaoEstadia.FINALIZADA,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    resposta = client.get("/api/quartos/ocupacao")
+
+    assert resposta.status_code == 200
+    corpo = {q["numero"]: q for q in resposta.json()}
+    assert set(corpo.keys()) == {"11", "12"}  # quarto inativo não aparece
+
+    quarto_11 = corpo["11"]
+    assert quarto_11["leito"] == 1
+    assert len(quarto_11["ocupantes"]) == 1
+    assert quarto_11["ocupantes"][0]["data_entrada"] == "2026-01-03T00:00:00"
+    assert len(quarto_11["pendentes_revisao"]) == 2
+
+    quarto_12 = corpo["12"]
+    assert quarto_12["leito"] == 3
+    assert quarto_12["ocupantes"] == []
+    assert quarto_12["pendentes_revisao"] == []
