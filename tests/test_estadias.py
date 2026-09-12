@@ -85,6 +85,47 @@ def test_criar_estadia_com_acompanhantes_aninhados(client, db_session):
     assert acompanhantes[0]["grau_parentesco"] == "Filho"
 
 
+def test_listar_filtrado_por_pessoa_acompanhante(client, db_session):
+    # Busca global: achar a estadia onde a pessoa aparece como
+    # `EstadiaAcompanhante`, não como titular do leito (`Estadia.id_pessoa`).
+    deps = _criar_dependencias(db_session)
+    acompanhante = Pessoa(
+        nome="José da Silva", data_nascimento=date(1988, 5, 20), data_cadastro=date.today()
+    )
+    db_session.add(acompanhante)
+    db_session.commit()
+    db_session.refresh(acompanhante)
+
+    resposta = client.post(
+        "/api/estadias",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_quarto": deps["quarto"].id,
+            "id_usuario": deps["usuario"].id,
+            "data_entrada": "2026-01-10T00:00:00",
+            "situacao": "Em acompanhamento",
+            "acompanhantes": [
+                {
+                    "id_pessoa": acompanhante.id,
+                    "data_entrada": "2026-01-10T00:00:00",
+                    "grau_parentesco": "Filho",
+                }
+            ],
+        },
+    )
+    estadia_id = resposta.json()["id"]
+
+    resposta = client.get("/api/estadias", params={"id_pessoa_acompanhante": acompanhante.id})
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["total"] == 1
+    assert corpo["items"][0]["id"] == estadia_id
+
+    # A própria pessoa titular não deve aparecer pra esse filtro.
+    resposta = client.get("/api/estadias", params={"id_pessoa_acompanhante": deps["pessoa"].id})
+    assert resposta.json()["total"] == 0
+
+
 def test_listar_filtrado_por_situacao(client, db_session):
     deps = _criar_dependencias(db_session)
     db_session.add_all(

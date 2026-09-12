@@ -14,12 +14,21 @@ from app.features.estadias.schemas import (
 def listar(
     db: Session,
     id_pessoa: int | None = None,
+    id_pessoa_acompanhante: int | None = None,
     situacao: SituacaoEstadia | None = None,
     skip: int = 0,
     take: int = 50,
 ) -> tuple[list[Estadia], int]:
     consulta = select(Estadia)
-    if id_pessoa is not None:
+    if id_pessoa_acompanhante is not None:
+        # Estadias onde a pessoa aparece como acompanhante de OUTRO
+        # paciente (`EstadiaAcompanhante.id_pessoa`), não como titular do
+        # leito (`Estadia.id_pessoa`) — usado pela busca global, pra achar
+        # a pessoa também nesse papel. Mutuamente exclusivo com `id_pessoa`.
+        consulta = consulta.join(
+            EstadiaAcompanhante, EstadiaAcompanhante.id_estadia == Estadia.id
+        ).where(EstadiaAcompanhante.id_pessoa == id_pessoa_acompanhante)
+    elif id_pessoa is not None:
         consulta = consulta.where(Estadia.id_pessoa == id_pessoa)
     if situacao is not None:
         consulta = consulta.where(Estadia.situacao == situacao)
