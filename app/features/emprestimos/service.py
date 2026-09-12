@@ -30,6 +30,32 @@ def _registrar_historico(
     db.commit()
 
 
+def _recalcular_situacao(db: Session, emprestimo: Emprestimo) -> None:
+    # `Emprestimo.situacao` não é digitada pelo usuário (campo read-only no
+    # legado) — recalculada a cada item criado/editado, mesma lógica de
+    # `AtualizarSituacaoEmprestimo` (untFrmManutencaoEmprestimo.pas):
+    # qualquer item Renovado vence; senão qualquer item Pendente vence; só
+    # vira Devolvido se todos os itens estiverem Devolvido; sem itens (ou
+    # nenhuma situação reconhecida), default Pendente.
+    itens = list(
+        db.scalars(select(EmprestimoItem).where(EmprestimoItem.id_emprestimo == emprestimo.id)).all()
+    )
+    situacoes = {item.situacao for item in itens}
+    if "Renovado" in situacoes:
+        nova_situacao = "Renovado"
+    elif "Pendente" in situacoes:
+        nova_situacao = "Pendente"
+    elif itens and all(item.situacao == "Devolvido" for item in itens):
+        nova_situacao = "Devolvido"
+    else:
+        nova_situacao = "Pendente"
+
+    if emprestimo.situacao != nova_situacao:
+        emprestimo.situacao = nova_situacao
+        db.commit()
+        db.refresh(emprestimo)
+
+
 def _aplicar_devolucao_efetiva(item: EmprestimoItem) -> None:
     # `data_devolucao` é prevista (digitada manualmente, ver models.py);
     # `data_devolucao_efetiva` é gravada aqui, automaticamente, só quando o
@@ -80,8 +106,11 @@ def buscar(db: Session, emprestimo_id: int) -> Emprestimo | None:
 
 
 def criar(db: Session, dados: EmprestimoCreate) -> Emprestimo:
+    # Situação inicial do cabeçalho é sempre "Pendente" (mesmo default do
+    # legado ao criar um novo registro, `btnNovoClick`) — recalculada logo
+    # abaixo a partir dos itens aninhados, se houver algum.
     campos_emprestimo = dados.model_dump(exclude={"itens"})
-    emprestimo = Emprestimo(**campos_emprestimo)
+    emprestimo = Emprestimo(**campos_emprestimo, situacao="Pendente")
     db.add(emprestimo)
     db.flush()  # gera emprestimo.id sem fechar a transação, pra usar como FK abaixo
 
@@ -96,6 +125,7 @@ def criar(db: Session, dados: EmprestimoCreate) -> Emprestimo:
 
     db.commit()
     db.refresh(emprestimo)
+    _recalcular_situacao(db, emprestimo)
     _registrar_historico(db, emprestimo.id, dados.id_usuario, "Inclusão", "Cadastro do registro.")
 
     for item, id_usuario_item in itens_criados:
@@ -154,6 +184,9 @@ def adicionar_item(db: Session, emprestimo_id: int, dados: EmprestimoItemCreate)
     db.add(item)
     db.commit()
     db.refresh(item)
+    emprestimo = db.get(Emprestimo, emprestimo_id)
+    if emprestimo is not None:
+        _recalcular_situacao(db, emprestimo)
     _registrar_historico(
         db, emprestimo_id, dados.id_usuario, "Item incluído", f"Item incluído: {_descricao_item(db, item)}"
     )
@@ -172,6 +205,9 @@ def atualizar_item(
     _aplicar_devolucao_efetiva(item)
     db.commit()
     db.refresh(item)
+    emprestimo = db.get(Emprestimo, item.id_emprestimo)
+    if emprestimo is not None:
+        _recalcular_situacao(db, emprestimo)
     _registrar_historico(
         db, item.id_emprestimo, dados.id_usuario, "Item alterado", f"Item alterado: {_descricao_item(db, item)}"
     )
@@ -202,9 +238,9 @@ def devolver(
             material.local = "Casa"
             material.disponivel_emprestimo = True
 
-    emprestimo.situacao = "Devolvido"
     db.commit()
     db.refresh(emprestimo)
+    _recalcular_situacao(db, emprestimo)
 
     for item in itens_devolvidos:
         db.refresh(item)

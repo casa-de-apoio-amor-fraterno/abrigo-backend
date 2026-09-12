@@ -10,9 +10,16 @@ class Emprestimo(Base):
     """Mapeia a tabela `emprestimo` (schema confirmado no dump de produção
     `sgf_abrigo`, MySQL 5.5 — ver docs/migracao-postgres.md).
 
-    `situacao` é campo de texto livre no legado (`TStringField` sem combo
-    fechado, mesmo padrão de `material.situacao`) — mantido como `String`,
-    não enum. Dado real observado: 'Pendente', 'Devolvido'.
+    `situacao` **não é digitada pelo usuário** — no legado é um
+    `TcxDBTextEdit` com `Enabled = False`, recalculado automaticamente por
+    `AtualizarSituacaoEmprestimo` (untFrmManutencaoEmprestimo.pas) a cada
+    item criado/editado, com prioridade Renovado > Pendente > Devolvido
+    (mesmas 3 constantes de `CasaApoio.Material.Constants.pas` usadas no
+    combo do item). Ver `service._recalcular_situacao`. Mantido como
+    `String` (não enum) na coluna porque é a mesma tabela usada pelo dado
+    real migrado, mas o schema Pydantic (`SituacaoEmprestimo`) já valida o
+    conjunto fechado. Dado real observado: 'Pendente', 'Devolvido' (nenhum
+    'Renovado' no dump, mas o valor é possível pela lógica do legado).
     """
 
     __tablename__ = "emprestimo"

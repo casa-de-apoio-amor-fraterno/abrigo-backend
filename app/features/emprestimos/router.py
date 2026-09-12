@@ -13,6 +13,7 @@ from app.features.emprestimos.schemas import (
     EmprestimoResponse,
     EmprestimoResumoResponse,
     EmprestimoUpdate,
+    SituacaoEmprestimo,
 )
 
 router = APIRouter()
@@ -21,7 +22,7 @@ router = APIRouter()
 @router.get("")
 def listar(
     id_pessoa: int | None = None,
-    situacao: str | None = None,
+    situacao: SituacaoEmprestimo | None = None,
     skip: int = 0,
     take: int = 50,
     db: Session = Depends(get_db),

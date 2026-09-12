@@ -11,13 +11,30 @@ dump de produção `sgf_abrigo`, 2026-09-10)
 
 `id_emprestimo` (int, PK), `id_pessoa`/`id_usuario` (int, FK reais já no
 legado — a pessoa que toma o(s) item(ns) emprestado(s) e o usuário que
-registrou), `situacao` (varchar(60), obrigatório — texto livre
-(`TStringField`, sem combo fechado, mesmo padrão de `material.situacao`);
-dado real observado: `'Pendente'`, `'Devolvido'`), `numero_contrato`
-(varchar(60), opcional), `observacao` (text, opcional — no dado real usado
-pra registrar responsável pelo empréstimo com RG/CPF quando a pessoa
-cadastrada não é quem retirou o item), `ativo` (varchar(3) 'Sim'/'Não',
-obrigatório, default `'Sim'` — modelado como `boolean`).
+registrou), `situacao` (varchar(60), obrigatório — ver achado abaixo,
+2026-09-11: não é texto livre digitado pelo usuário, é calculado a partir
+dos itens; dado real observado: `'Pendente'`, `'Devolvido'`),
+`numero_contrato` (varchar(60), opcional), `observacao` (text, opcional —
+no dado real usado pra registrar responsável pelo empréstimo com RG/CPF
+quando a pessoa cadastrada não é quem retirou o item), `ativo` (varchar(3)
+'Sim'/'Não', obrigatório, default `'Sim'` — modelado como `boolean`).
+
+**`situacao` (cabeçalho) é calculada, não digitada (achado 2026-09-11).**
+O campo no legado (`untFrmManutencaoEmprestimo.dfm`, `cxDBTextEdit3`) é um
+`TcxDBTextEdit` com `Enabled = False` — só exibição. O valor real vem de
+`AtualizarSituacaoEmprestimo` (`untFrmManutencaoEmprestimo.pas`), chamada
+toda vez que um item é salvo (`btnSalvarItemClick`): varre todos os itens
+do empréstimo e aplica, nesta ordem de prioridade, as mesmas 3 constantes
+de `CasaApoio.Material.Constants.pas` usadas no combo do item — qualquer
+item `'Renovado'` vence; senão qualquer item `'Pendente'` vence; só vira
+`'Devolvido'` se **todos** os itens estiverem `'Devolvido'`; sem itens,
+default `'Pendente'` (mesmo valor setado na criação do registro,
+`btnNovoClick`). Backend novo replica em `service._recalcular_situacao`,
+chamada após `criar`/`adicionar_item`/`atualizar_item`/`devolver`; o
+schema de entrada (`EmprestimoCreate`/`EmprestimoUpdate`) não aceita mais
+`situacao` do cliente — só `EmprestimoResponse`/`EmprestimoResumoResponse`
+expõem o valor computado. Frontend: campo "Situação" do cabeçalho virou
+somente leitura no formulário.
 
 ## Campos reais — `emprestimo_item`
 

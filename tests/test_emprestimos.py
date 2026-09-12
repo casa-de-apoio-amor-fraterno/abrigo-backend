@@ -55,7 +55,7 @@ def test_criar_emprestimo_com_itens_aninhados(client, db_session):
                     "id_material": deps["material"].id,
                     "id_usuario": deps["usuario"].id,
                     "data_emprestimo": "2026-01-10",
-                    "situacao": "Emprestado",
+                    "situacao": "Pendente",
                 }
             ],
         },
@@ -68,7 +68,7 @@ def test_criar_emprestimo_com_itens_aninhados(client, db_session):
     itens = resposta.json()
     assert len(itens) == 1
     assert itens[0]["id_material"] == deps["material"].id
-    assert itens[0]["situacao"] == "Emprestado"
+    assert itens[0]["situacao"] == "Pendente"
 
     resposta = client.get(f"/api/emprestimos/{emprestimo_id}/historico")
     tipos = {h["tipo"] for h in resposta.json()}
@@ -122,7 +122,7 @@ def test_adicionar_e_listar_item(client, db_session):
             "id_material": deps["material"].id,
             "id_usuario": deps["usuario"].id,
             "data_emprestimo": "2026-01-10",
-            "situacao": "Emprestado",
+            "situacao": "Pendente",
         },
     )
     assert resposta.status_code == 201
@@ -133,6 +133,27 @@ def test_adicionar_e_listar_item(client, db_session):
     corpo = resposta.json()
     assert len(corpo) == 1
     assert corpo[0]["id"] == item_id
+
+
+def test_rejeita_situacao_invalida_no_item(client, db_session):
+    # Combo fechado no legado (`rgpSituacao`, untFrmManutencaoEmprestimo.dfm)
+    # com só 3 valores reais — qualquer outro texto deve ser rejeitado.
+    deps = _criar_dependencias(db_session)
+    resposta = client.post(
+        "/api/emprestimos",
+        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+    )
+    emprestimo_id = resposta.json()["id"]
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/itens",
+        json={
+            "id_material": deps["material"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Emprestado",
+        },
+    )
+    assert resposta.status_code == 422
 
 
 def test_atualizar_item_marcando_devolucao(client, db_session):
@@ -367,7 +388,7 @@ def test_adicionar_item_registra_historico(client, db_session):
             "id_material": deps["material"].id,
             "id_usuario": deps["usuario"].id,
             "data_emprestimo": "2026-01-10",
-            "situacao": "Emprestado",
+            "situacao": "Pendente",
         },
     )
     assert resposta.status_code == 201
@@ -376,7 +397,7 @@ def test_adicionar_item_registra_historico(client, db_session):
     corpo = resposta.json()
     item_incluido = next(h for h in corpo if h["tipo"] == "Item incluído")
     assert "Cadeira de rodas" in item_incluido["observacao"]
-    assert "situação: Emprestado" in item_incluido["observacao"]
+    assert "situação: Pendente" in item_incluido["observacao"]
 
 
 def test_devolver_marca_emprestimo_itens_e_libera_material(client, db_session):
@@ -425,7 +446,18 @@ def test_devolver_sem_data_usa_hoje(client, db_session):
     deps = _criar_dependencias(db_session)
     resposta = client.post(
         "/api/emprestimos",
-        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+            "itens": [
+                {
+                    "id_material": deps["material"].id,
+                    "id_usuario": deps["usuario"].id,
+                    "situacao": "Pendente",
+                }
+            ],
+        },
     )
     emprestimo_id = resposta.json()["id"]
 
@@ -435,6 +467,29 @@ def test_devolver_sem_data_usa_hoje(client, db_session):
 
     assert resposta.status_code == 200
     assert resposta.json()["situacao"] == "Devolvido"
+
+    itens = client.get(f"/api/emprestimos/{emprestimo_id}/itens").json()
+    assert itens[0]["data_devolucao_efetiva"] == date.today().isoformat()
+
+
+def test_devolver_emprestimo_sem_itens_mantem_pendente(client, db_session):
+    # `situacao` do cabeçalho é calculada a partir dos itens (achado
+    # 2026-09-11, ver emprestimo.legacy.md) — sem nenhum item, o default é
+    # sempre "Pendente" (mesma regra de `AtualizarSituacaoEmprestimo`),
+    # mesmo chamando `/devolver` num empréstimo vazio.
+    deps = _criar_dependencias(db_session)
+    resposta = client.post(
+        "/api/emprestimos",
+        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+    )
+    emprestimo_id = resposta.json()["id"]
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/devolver", json={"id_usuario": deps["usuario"].id}
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["situacao"] == "Pendente"
 
 
 def test_devolver_nao_reativa_material_ja_baixado(client, db_session):
@@ -506,6 +561,76 @@ def test_devolver_emprestimo_inexistente_retorna_404(client):
     resposta = client.post("/api/emprestimos/999/devolver", json={"id_usuario": 1})
 
     assert resposta.status_code == 404
+
+
+def test_situacao_cabecalho_ignora_valor_enviado_pelo_cliente(client, db_session):
+    # `Emprestimo.situacao` não é aceita como input (achado 2026-09-11, ver
+    # emprestimo.legacy.md) — mandar o campo no corpo não tem efeito, o
+    # valor é sempre calculado a partir dos itens.
+    deps = _criar_dependencias(db_session)
+    resposta = client.post(
+        "/api/emprestimos",
+        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Devolvido"},
+    )
+    assert resposta.status_code == 201
+    assert resposta.json()["situacao"] == "Pendente"
+
+
+def test_situacao_cabecalho_prioriza_renovado_sobre_pendente_e_devolvido(client, db_session):
+    # Mesma prioridade de `AtualizarSituacaoEmprestimo`
+    # (untFrmManutencaoEmprestimo.pas): qualquer item Renovado vence sobre
+    # Pendente, que por sua vez vence sobre Devolvido.
+    deps = _criar_dependencias(db_session)
+    outro_material = Material(
+        descricao="Muleta", situacao="Disponível", local="Casa", disponivel_emprestimo=True
+    )
+    db_session.add(outro_material)
+    db_session.commit()
+    db_session.refresh(outro_material)
+
+    resposta = client.post(
+        "/api/emprestimos",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+            "itens": [
+                {
+                    "id_material": deps["material"].id,
+                    "id_usuario": deps["usuario"].id,
+                    "situacao": "Devolvido",
+                }
+            ],
+        },
+    )
+    emprestimo_id = resposta.json()["id"]
+    assert resposta.json()["situacao"] == "Devolvido"
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/itens",
+        json={
+            "id_material": outro_material.id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+        },
+    )
+    item_pendente_id = resposta.json()["id"]
+
+    resposta = client.get(f"/api/emprestimos/{emprestimo_id}")
+    assert resposta.json()["situacao"] == "Pendente"
+
+    resposta = client.put(
+        f"/api/emprestimos/{emprestimo_id}/itens/{item_pendente_id}",
+        json={
+            "id_material": outro_material.id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Renovado",
+        },
+    )
+    assert resposta.status_code == 200
+
+    resposta = client.get(f"/api/emprestimos/{emprestimo_id}")
+    assert resposta.json()["situacao"] == "Renovado"
 
 
 def test_atualizar_item_registra_historico(client, db_session):
