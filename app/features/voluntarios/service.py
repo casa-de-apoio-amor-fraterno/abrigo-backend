@@ -28,8 +28,14 @@ def buscar(db: Session, voluntario_id: int) -> Voluntario | None:
 
 
 def criar(db: Session, dados: VoluntarioCreate) -> Voluntario:
-    voluntario = Voluntario(**dados.model_dump())
+    campos_voluntario = dados.model_dump(exclude={"contatos"})
+    voluntario = Voluntario(**campos_voluntario)
     db.add(voluntario)
+    db.flush()  # gera voluntario.id sem fechar a transação, pra usar como FK abaixo
+
+    for contato in dados.contatos:
+        db.add(VoluntarioContato(id_voluntario=voluntario.id, **contato.model_dump()))
+
     db.commit()
     db.refresh(voluntario)
     return voluntario

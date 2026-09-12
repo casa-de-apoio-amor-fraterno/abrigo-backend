@@ -14,8 +14,34 @@ class VoluntarioBase(BaseModel):
     observacao: str | None = None
 
 
-class VoluntarioCreate(VoluntarioBase):
+class VoluntarioContatoBase(BaseModel):
+    numero: str
+    nome_contato: str | None = None
+    observacao: str | None = None
+    principal: bool = False
+
+
+class VoluntarioContatoCreate(VoluntarioContatoBase):
     pass
+
+
+class VoluntarioContatoUpdate(VoluntarioContatoBase):
+    pass
+
+
+class VoluntarioContatoResponse(VoluntarioContatoBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    id_voluntario: int
+
+
+class VoluntarioCreate(VoluntarioBase):
+    # Contatos aninhados: o voluntário ainda não existe pra usar o
+    # sub-recurso próprio (POST /voluntarios/{id}/contatos), então o front
+    # manda os telefones junto na criação e o service grava tudo numa
+    # transação só (mesmo padrão de `PessoaCreate.contatos`).
+    contatos: list[VoluntarioContatoCreate] = []
 
 
 class VoluntarioUpdate(VoluntarioBase):
@@ -37,25 +63,3 @@ class VoluntarioResponse(VoluntarioBase):
     id: int
     ativo: bool
     telefone_principal: str | None
-
-
-class VoluntarioContatoBase(BaseModel):
-    numero: str
-    nome_contato: str | None = None
-    observacao: str | None = None
-    principal: bool = False
-
-
-class VoluntarioContatoCreate(VoluntarioContatoBase):
-    pass
-
-
-class VoluntarioContatoUpdate(VoluntarioContatoBase):
-    pass
-
-
-class VoluntarioContatoResponse(VoluntarioContatoBase):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    id_voluntario: int

@@ -48,6 +48,28 @@ def test_criar_e_buscar_voluntario(client):
     assert resposta.json()["telefone_principal"] is None
 
 
+def test_criar_voluntario_com_contatos_aninhados(client):
+    resposta = client.post(
+        "/api/voluntarios",
+        json={
+            "nome": "Beatriz Nunes",
+            "contatos": [
+                {"numero": "42999990000", "nome_contato": "Beatriz", "principal": True},
+                {"numero": "42988880000"},
+            ],
+        },
+    )
+    assert resposta.status_code == 201
+    voluntario_id = resposta.json()["id"]
+    assert resposta.json()["telefone_principal"] == "42999990000"
+
+    resposta = client.get(f"/api/voluntarios/{voluntario_id}/contatos")
+    assert resposta.status_code == 200
+    contatos = resposta.json()
+    assert len(contatos) == 2
+    assert {c["numero"] for c in contatos} == {"42999990000", "42988880000"}
+
+
 def test_atualizar_voluntario(client):
     resposta = client.post("/api/voluntarios", json={"nome": "Carla"})
     voluntario_id = resposta.json()["id"]
