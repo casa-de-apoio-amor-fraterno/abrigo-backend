@@ -48,6 +48,43 @@ def test_criar_e_buscar_estadia(client, db_session):
     assert resposta.json()["situacao"] == "Em acompanhamento"
 
 
+def test_criar_estadia_com_acompanhantes_aninhados(client, db_session):
+    deps = _criar_dependencias(db_session)
+    acompanhante = Pessoa(
+        nome="José da Silva", data_nascimento=date(1988, 5, 20), data_cadastro=date.today()
+    )
+    db_session.add(acompanhante)
+    db_session.commit()
+    db_session.refresh(acompanhante)
+
+    resposta = client.post(
+        "/api/estadias",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_quarto": deps["quarto"].id,
+            "id_usuario": deps["usuario"].id,
+            "data_entrada": "2026-01-10T00:00:00",
+            "situacao": "Em acompanhamento",
+            "acompanhantes": [
+                {
+                    "id_pessoa": acompanhante.id,
+                    "data_entrada": "2026-01-10T00:00:00",
+                    "grau_parentesco": "Filho",
+                }
+            ],
+        },
+    )
+    assert resposta.status_code == 201
+    estadia_id = resposta.json()["id"]
+
+    resposta = client.get(f"/api/estadias/{estadia_id}/acompanhantes")
+    assert resposta.status_code == 200
+    acompanhantes = resposta.json()
+    assert len(acompanhantes) == 1
+    assert acompanhantes[0]["id_pessoa"] == acompanhante.id
+    assert acompanhantes[0]["grau_parentesco"] == "Filho"
+
+
 def test_listar_filtrado_por_situacao(client, db_session):
     deps = _criar_dependencias(db_session)
     db_session.add_all(

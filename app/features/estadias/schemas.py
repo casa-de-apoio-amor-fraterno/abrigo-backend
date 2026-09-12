@@ -17,8 +17,30 @@ class EstadiaBase(BaseModel):
     observacao: str | None = None
 
 
-class EstadiaCreate(EstadiaBase):
+class EstadiaAcompanhanteBase(BaseModel):
+    id_pessoa: int
+    data_entrada: datetime
+    data_saida: datetime | None = None
+    grau_parentesco: str | None = None
+
+
+class EstadiaAcompanhanteCreate(EstadiaAcompanhanteBase):
     pass
+
+
+class EstadiaAcompanhanteResponse(EstadiaAcompanhanteBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    id_estadia: int
+
+
+class EstadiaCreate(EstadiaBase):
+    # Acompanhantes aninhados: a estadia ainda não existe pra usar o
+    # sub-recurso próprio (POST /estadias/{id}/acompanhantes), então o
+    # front manda os acompanhantes junto na criação e o service grava tudo
+    # numa transação só (mesmo padrão de `PessoaCreate.composicao_familiar`).
+    acompanhantes: list[EstadiaAcompanhanteCreate] = []
 
 
 class EstadiaUpdate(EstadiaBase):
@@ -46,21 +68,3 @@ class EstadiaResponse(EstadiaBase):
 
     id: int
     ativo: bool | None
-
-
-class EstadiaAcompanhanteBase(BaseModel):
-    id_pessoa: int
-    data_entrada: datetime
-    data_saida: datetime | None = None
-    grau_parentesco: str | None = None
-
-
-class EstadiaAcompanhanteCreate(EstadiaAcompanhanteBase):
-    pass
-
-
-class EstadiaAcompanhanteResponse(EstadiaAcompanhanteBase):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    id_estadia: int

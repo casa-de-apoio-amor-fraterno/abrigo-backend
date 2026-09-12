@@ -36,8 +36,14 @@ def buscar(db: Session, estadia_id: int) -> Estadia | None:
 
 
 def criar(db: Session, dados: EstadiaCreate) -> Estadia:
-    estadia = Estadia(**dados.model_dump())
+    campos_estadia = dados.model_dump(exclude={"acompanhantes"})
+    estadia = Estadia(**campos_estadia)
     db.add(estadia)
+    db.flush()  # gera estadia.id sem fechar a transação, pra usar como FK abaixo
+
+    for acompanhante in dados.acompanhantes:
+        db.add(EstadiaAcompanhante(id_estadia=estadia.id, **acompanhante.model_dump()))
+
     db.commit()
     db.refresh(estadia)
     return estadia
