@@ -24,6 +24,7 @@ class MaterialResumoResponse(BaseModel):
 
     id: int
     descricao: str
+    codigo_identificacao: str | None
     situacao: str
     disponivel_emprestimo: bool
 
