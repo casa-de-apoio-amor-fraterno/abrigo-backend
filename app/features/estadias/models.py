@@ -74,18 +74,29 @@ class Estadia(Base):
             # Sem values_callable, o SQLAlchemy grava o *nome* do membro
             # ("DIAS") em vez do `.value` ("dias") — inconsistente com o
             # texto gravado pela migração 0017/ETL (via SQL cru, usa o
-            # valor). Mesmo problema latente existe em `situacao` e
-            # `tipo_pessoa` (nenhuma outra Enum coluna do projeto usa
-            # values_callable) — fora do escopo desta mudança, sinalizado
-            # à parte.
+            # valor). Mesmo padrão aplicado em `situacao` e `tipo_pessoa`
+            # abaixo (migração de dados de correção em 0018).
             values_callable=lambda enum_cls: [membro.value for membro in enum_cls],
         ),
         nullable=True,
     )
     tipo_pessoa: Mapped[TipoPessoaEstadia] = mapped_column(
-        Enum(TipoPessoaEstadia, native_enum=False, length=20), default=TipoPessoaEstadia.PACIENTE
+        Enum(
+            TipoPessoaEstadia,
+            native_enum=False,
+            length=20,
+            values_callable=lambda enum_cls: [membro.value for membro in enum_cls],
+        ),
+        default=TipoPessoaEstadia.PACIENTE,
     )
-    situacao: Mapped[SituacaoEstadia] = mapped_column(Enum(SituacaoEstadia, native_enum=False, length=30))
+    situacao: Mapped[SituacaoEstadia] = mapped_column(
+        Enum(
+            SituacaoEstadia,
+            native_enum=False,
+            length=30,
+            values_callable=lambda enum_cls: [membro.value for membro in enum_cls],
+        )
+    )
     observacao: Mapped[str | None] = mapped_column(Text, nullable=True)
     ativo: Mapped[bool | None] = mapped_column(nullable=True, default=True)
 

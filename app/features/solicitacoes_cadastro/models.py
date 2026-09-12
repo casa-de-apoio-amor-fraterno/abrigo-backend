@@ -33,7 +33,12 @@ class SolicitacaoCadastroPaciente(Base):
     foto: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     foto_content_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     situacao: Mapped[SituacaoSolicitacaoCadastro] = mapped_column(
-        Enum(SituacaoSolicitacaoCadastro, native_enum=False, length=20),
+        Enum(
+            SituacaoSolicitacaoCadastro,
+            native_enum=False,
+            length=20,
+            values_callable=lambda enum_cls: [membro.value for membro in enum_cls],
+        ),
         default=SituacaoSolicitacaoCadastro.PENDENTE,
     )
     data_solicitacao: Mapped[datetime] = mapped_column(DateTime)
