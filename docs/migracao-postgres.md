@@ -186,16 +186,16 @@ versionada, em ambiente local/controlado.
          SQLite nos testes). Sem isso, a primeira vez que a própria
          aplicação criar um registro novo (`POST /api/pessoas`, etc.) após
          o ETL colidiria com um id do legado.
-      `pgvector` **não foi instalado** — não tem pacote pronto pra Windows,
-      exigiria compilar com o workload C++ do Visual Studio (o ambiente
-      tinha o VS instalado mas sem esse workload, e o instalador do VS
-      recusa modo silencioso sem elevação UAC interativa, que esta sessão
-      não tem como confirmar). Como `pgvector` ainda não é usado em
-      nenhuma coluna, `alembic/versions/0001_estrutura_inicial.py` foi
-      ajustado pra criar a extensão só se ela já estiver disponível no
-      servidor (`SELECT 1 FROM pg_available_extensions WHERE name =
-      'vector'`), sem travar quem ainda não a instalou.
-- [ ] Instalar `pgvector` de fato (precisa do workload "Desktop
-      development with C++" do Visual Studio + compilar) e habilitá-lo
-      numa coluna (`vector(N)`) quando a funcionalidade de busca semântica
-      for implementada.
+- [x] **`pgvector` instalado (2026-09-11).** Compilado do zero com MSVC
+      (workload "Desenvolvimento para desktop com C++" do Visual Studio +
+      `nmake /f Makefile.win`, fonte `github.com/pgvector/pgvector` tag
+      `v0.8.0`) — a cópia final dos arquivos compilados pra dentro de
+      `Program Files\PostgreSQL\17\` exigia admin, que esta sessão não
+      tinha; o usuário rodou essa cópia num PowerShell elevado. Testado
+      com `CREATE EXTENSION` e uma busca por distância vetorial real
+      (`<->`) num `vector(3)`. A migração `0001_estrutura_inicial.py`
+      (ajustada antes pra não travar sem `pgvector`) agora cria a extensão
+      normalmente, sem cair no aviso — confirmado rodando `alembic upgrade
+      head` do zero num banco novo.
+- [ ] Habilitar `pgvector` de fato numa coluna (`vector(N)`) quando a
+      funcionalidade de busca semântica for implementada.
