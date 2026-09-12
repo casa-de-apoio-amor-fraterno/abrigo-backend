@@ -1,8 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.features.estadias.models import SituacaoEstadia, TipoPessoaEstadia
+from app.features.estadias.models import SituacaoEstadia, TipoPessoaEstadia, UnidadeTempoEstadia
 
 
 class EstadiaBase(BaseModel):
@@ -11,7 +11,12 @@ class EstadiaBase(BaseModel):
     id_usuario: int
     data_entrada: datetime
     data_saida: datetime | None = None
-    tempo_estadia: str | None = None
+    tempo_estadia: str | None = Field(
+        default=None,
+        deprecated="Legado, somente leitura. Use tempo_estadia_valor + tempo_estadia_unidade.",
+    )
+    tempo_estadia_valor: int | None = None
+    tempo_estadia_unidade: UnidadeTempoEstadia | None = None
     tipo_pessoa: TipoPessoaEstadia = TipoPessoaEstadia.PACIENTE
     situacao: SituacaoEstadia
     observacao: str | None = None

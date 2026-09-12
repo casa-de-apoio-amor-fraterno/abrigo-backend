@@ -140,6 +140,46 @@ def texto_ou_none(valor: str | None) -> str | None:
     return valor if valor != "" else None
 
 
+_TEMPO_ESTADIA_COM_UNIDADE = re.compile(r"^(\d+)\s*(dias?|noites?|horas?)$", re.IGNORECASE)
+_TEMPO_ESTADIA_SO_NUMERO = re.compile(r"^\d+$")
+_UNIDADE_TEMPO_ESTADIA = {
+    "dia": "dias",
+    "dias": "dias",
+    "noite": "noites",
+    "noites": "noites",
+    "hora": "horas",
+    "horas": "horas",
+}
+
+
+def parse_tempo_estadia(texto_bruto: str | None) -> tuple[int | None, str | None]:
+    """Extrai `(valor, unidade)` do texto livre legado `tempo_estadia`
+    quando o formato é reconhecível ("N dia(s)/noite(s)/hora(s)", ou só um
+    número, tratado como dias — unidade predominante no dado real).
+
+    Best-effort, mesmo espírito de `parse_contatos`: o campo também foi
+    usado às vezes pra observação (`'não pernoitou'`, `'troca de quarto'`
+    etc. — ver `app/features/estadias/estadia.legacy.md`). Quando não casa
+    com nenhum padrão, devolve `(None, None)` sem tentar adivinhar — o
+    texto original continua preservado em `tempo_estadia` pra auditoria.
+    """
+    if not texto_bruto:
+        return None, None
+
+    texto = texto_bruto.strip()
+    if not texto:
+        return None, None
+
+    casamento = _TEMPO_ESTADIA_COM_UNIDADE.match(texto)
+    if casamento:
+        return int(casamento.group(1)), _UNIDADE_TEMPO_ESTADIA[casamento.group(2).lower()]
+
+    if _TEMPO_ESTADIA_SO_NUMERO.match(texto):
+        return int(texto), "dias"
+
+    return None, None
+
+
 def transformar_estado(linha: dict) -> dict:
     return {"id": linha["id_estado"], "nome": linha["nome"], "uf": linha["uf"]}
 
@@ -245,6 +285,7 @@ def transformar_material(linha: dict) -> dict:
 
 
 def transformar_estadia(linha: dict) -> dict:
+    tempo_estadia_valor, tempo_estadia_unidade = parse_tempo_estadia(linha["tempo_estadia"])
     return {
         "id": linha["id_estadia"],
         "id_pessoa": linha["id_pessoa"],
@@ -253,6 +294,8 @@ def transformar_estadia(linha: dict) -> dict:
         "data_entrada": datetime_zerado_para_none(linha["data_entrada"]),
         "data_saida": datetime_zerado_para_none(linha["data_saida"]),
         "tempo_estadia": texto_ou_none(linha["tempo_estadia"]),
+        "tempo_estadia_valor": tempo_estadia_valor,
+        "tempo_estadia_unidade": tempo_estadia_unidade,
         "tipo_pessoa": linha["tipo_pessoa"] or "Paciente",
         "situacao": linha["situacao"],
         "observacao": texto_ou_none(linha["observacao"]),

@@ -22,6 +22,16 @@ class SituacaoEstadia(str, enum.Enum):
     FINALIZADA = "Finalizada"
 
 
+class UnidadeTempoEstadia(str, enum.Enum):
+    """Unidade do novo par estruturado `tempo_estadia_valor` /
+    `tempo_estadia_unidade` (ver decisão em `estadia.legacy.md`, migração
+    0017)."""
+
+    DIAS = "dias"
+    NOITES = "noites"
+    HORAS = "horas"
+
+
 class Estadia(Base):
     """Mapeia a tabela `estadia` (schema confirmado no dump de produção
     `sgf_abrigo`, MySQL 5.5 — ver docs/migracao-postgres.md).
@@ -35,8 +45,15 @@ class Estadia(Base):
     paciente sem necessariamente ter leito próprio, com sua própria janela
     de entrada/saída e grau de parentesco.
 
-    `tempo_estadia` é texto livre legado (ex.: "06 dias ", "4 dias") — não
-    normalizado/recalculado, mantido fiel ao dado real.
+    `tempo_estadia` é texto livre legado (ex.: "06 dias ", "4 dias") —
+    **DEPRECATED** (migração 0017): mantido apenas para auditoria/histórico
+    dos casos que não deu pra migrar automaticamente (grafia irregular,
+    texto usado como observação etc. — ver `estadia.legacy.md`). Não
+    editável mais pelo frontend. Para dado estruturado, usar
+    `tempo_estadia_valor` + `tempo_estadia_unidade`, preenchidos por uma
+    migração de dados a partir do texto legado quando o formato era
+    reconhecível ("N dias/noite(s)/hora(s)"), daqui pra frente preenchidos
+    diretamente pelo formulário.
     """
 
     __tablename__ = "estadia"
@@ -48,6 +65,23 @@ class Estadia(Base):
     data_entrada: Mapped[datetime] = mapped_column(DateTime)
     data_saida: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     tempo_estadia: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    tempo_estadia_valor: Mapped[int | None] = mapped_column(nullable=True)
+    tempo_estadia_unidade: Mapped[UnidadeTempoEstadia | None] = mapped_column(
+        Enum(
+            UnidadeTempoEstadia,
+            native_enum=False,
+            length=10,
+            # Sem values_callable, o SQLAlchemy grava o *nome* do membro
+            # ("DIAS") em vez do `.value` ("dias") — inconsistente com o
+            # texto gravado pela migração 0017/ETL (via SQL cru, usa o
+            # valor). Mesmo problema latente existe em `situacao` e
+            # `tipo_pessoa` (nenhuma outra Enum coluna do projeto usa
+            # values_callable) — fora do escopo desta mudança, sinalizado
+            # à parte.
+            values_callable=lambda enum_cls: [membro.value for membro in enum_cls],
+        ),
+        nullable=True,
+    )
     tipo_pessoa: Mapped[TipoPessoaEstadia] = mapped_column(
         Enum(TipoPessoaEstadia, native_enum=False, length=20), default=TipoPessoaEstadia.PACIENTE
     )

@@ -86,6 +86,50 @@ um valor default por suposição.
 ## Status
 Mapeado e implementado (CRUD completo + sub-recurso de acompanhantes).
 Dados reais entram via ETL (`docs/migracao-postgres.md`), não pela
-migração Alembic. Frontend: só serviço de apoio por ora, tela de
-consulta/cadastro ainda não implementada (já existe rota placeholder no
-`app.routes.ts`).
+migração Alembic. Frontend: CRUD completo (cadastro + consulta),
+incluindo sub-recurso de acompanhantes.
+
+## `tempo_estadia` depreciado em favor de `tempo_estadia_valor` +
+`tempo_estadia_unidade` (migração 0017, 2026-09-12)
+
+Pedido do time: separar o texto livre `tempo_estadia` em dois campos
+estruturados — quantidade (`tempo_estadia_valor`, inteiro) e unidade
+(`tempo_estadia_unidade`, enum `dias`/`noites`/`horas`) — e depreciar o
+campo antigo, mantendo-o só para auditoria/histórico.
+
+**Por que não dava pra só recalcular a partir de `data_entrada`/
+`data_saida`**: o campo era texto livre sem validação na tela Delphi
+(`edttempo_estadia`), e o dado real do dump de produção mostra que ele
+também foi usado pra registrar observações da saída, não só duração —
+achado confirmado analisando a amostra real de valores distintos do
+dump (`sgf_abrigo`, tabela `estadia`, ~4432 linhas): exemplos como
+`'não pernoitou'`, `'TROCA DE QUARTO'`, `'café da manhã'`, `'QUARTO
+ERRADO'`, além de erros de digitação (`'2 diias'`, `'1 NIOITE'`) e
+grafia por extenso (`'dois dias'`).
+
+**Estratégia de migração (best-effort, não perde dado)**:
+- Regex reconhece o padrão `"N dia(s)/noite(s)/hora(s)"`
+  (case-insensitive, zero à esquerda e espaços tolerados) e popula os
+  dois campos novos.
+- Número sozinho sem unidade (ex.: `'1'`, `'2'` — ~600 ocorrências no
+  dump) é tratado como dias, por ser a unidade largamente predominante
+  no restante dos dados reais (decisão do time, não inferência).
+- Quando o texto não casa com nenhum padrão reconhecível, os campos
+  novos ficam `NULL` e **o texto original permanece intacto** em
+  `tempo_estadia` — nunca sobrescrito nem descartado, pra quem precisar
+  auditar manualmente depois.
+- Resultado real (migração 0017 rodada contra o dump completo): ~3550
+  de ~3685 registros com texto (96%) migrados automaticamente; os ~135
+  restantes são exatamente os casos "sujos" (observação, erro de
+  digitação, grafia irregular) — ficaram de fora de propósito.
+- A mesma lógica (`parse_tempo_estadia`,
+  `app/scripts/etl/transformacoes.py`) roda tanto na migração Alembic
+  (backfill via SQL) quanto na ETL de carga inicial, pra manter os dois
+  caminhos de entrada de dado consistentes.
+
+**Frontend**: o input de texto livre "Tempo estadia" foi removido da
+tela de cadastro/edição (decisão do time — não faz sentido manter um
+campo depreciado editável), substituído por um input numérico +
+`mat-select` de unidade. O valor legado (quando existir e não tiver
+sido migrado) não aparece mais na tela — só via API, pra quem precisar
+consultar o histórico bruto.

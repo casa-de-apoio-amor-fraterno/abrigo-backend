@@ -4,6 +4,7 @@ from app.scripts.etl.transformacoes import (
     data_zerada_para_none,
     datetime_zerado_para_none,
     parse_contatos,
+    parse_tempo_estadia,
     sim_nao_para_bool,
     texto_ou_none,
     transformar_avaliacao_social,
@@ -156,6 +157,49 @@ def test_transformar_estadia_tipo_pessoa_default_paciente():
 
     assert resultado["tipo_pessoa"] == "Paciente"
     assert resultado["data_entrada"] == datetime(2018, 7, 11, 0, 0, 0)
+
+
+def test_parse_tempo_estadia_vazio():
+    assert parse_tempo_estadia(None) == (None, None)
+    assert parse_tempo_estadia("") == (None, None)
+    assert parse_tempo_estadia("   ") == (None, None)
+
+
+def test_parse_tempo_estadia_dias_singular_e_plural():
+    assert parse_tempo_estadia("1 dia") == (1, "dias")
+    assert parse_tempo_estadia("4 dias") == (4, "dias")
+
+
+def test_parse_tempo_estadia_zero_a_esquerda_e_espacos():
+    """Dado real: '06 dias '."""
+    assert parse_tempo_estadia("06 dias ") == (6, "dias")
+
+
+def test_parse_tempo_estadia_case_insensitive():
+    assert parse_tempo_estadia("1 DIA") == (1, "dias")
+    assert parse_tempo_estadia("2 Dias") == (2, "dias")
+
+
+def test_parse_tempo_estadia_noites_e_horas():
+    assert parse_tempo_estadia("1 noite") == (1, "noites")
+    assert parse_tempo_estadia("2 noites") == (2, "noites")
+    assert parse_tempo_estadia("3 horas") == (3, "horas")
+
+
+def test_parse_tempo_estadia_numero_sozinho_vira_dias():
+    """Dado real: valores como '1', '2' sem unidade escrita — decisão do
+    time: tratar como dias, unidade predominante no restante dos dados."""
+    assert parse_tempo_estadia("1") == (1, "dias")
+    assert parse_tempo_estadia("15") == (15, "dias")
+
+
+def test_parse_tempo_estadia_texto_nao_reconhecido_nao_migra():
+    """Dado real usado como observação, não duração — não deve virar um
+    valor inventado; o texto original continua em `tempo_estadia`."""
+    assert parse_tempo_estadia("não pernoitou") == (None, None)
+    assert parse_tempo_estadia("TROCA DE QUARTO") == (None, None)
+    assert parse_tempo_estadia("2 hrs 30minutos") == (None, None)
+    assert parse_tempo_estadia("dois dias") == (None, None)
 
 
 def test_parse_contatos_vazio():
