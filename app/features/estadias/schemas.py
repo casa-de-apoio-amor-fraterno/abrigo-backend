@@ -66,6 +66,8 @@ class EstadiaResumoResponse(BaseModel):
     data_saida: datetime | None
     situacao: SituacaoEstadia
     tipo_pessoa: TipoPessoaEstadia
+    tempo_estadia_valor: int | None
+    tempo_estadia_unidade: UnidadeTempoEstadia | None
 
 
 class EstadiaResponse(EstadiaBase):
