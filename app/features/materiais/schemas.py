@@ -27,6 +27,7 @@ class MaterialResumoResponse(BaseModel):
     codigo_identificacao: str | None
     situacao: str
     disponivel_emprestimo: bool
+    tem_foto: bool
 
 
 class MaterialResponse(MaterialBase):
@@ -34,3 +35,4 @@ class MaterialResponse(MaterialBase):
 
     id: int
     ativo: bool | None
+    tem_foto: bool

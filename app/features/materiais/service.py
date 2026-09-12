@@ -1,3 +1,6 @@
+import io
+
+from PIL import Image
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -48,4 +51,61 @@ def atualizar(db: Session, material: Material, dados: MaterialUpdate) -> Materia
 
 def inativar(db: Session, material: Material) -> None:
     material.ativo = False
+    db.commit()
+
+
+TIPOS_FOTO_PERMITIDOS = {"image/jpeg", "image/png", "image/webp"}
+TAMANHO_MAXIMO_FOTO_BYTES = 5 * 1024 * 1024
+TAMANHO_THUMB = (200, 200)
+_FORMATO_PIL_POR_CONTENT_TYPE = {
+    "image/jpeg": "JPEG",
+    "image/png": "PNG",
+    "image/webp": "WEBP",
+}
+
+
+class FotoInvalida(Exception):
+    pass
+
+
+def _gerar_thumbnail(conteudo: bytes, content_type: str) -> bytes:
+    imagem = Image.open(io.BytesIO(conteudo))
+    imagem.thumbnail(TAMANHO_THUMB)
+    formato = _FORMATO_PIL_POR_CONTENT_TYPE[content_type]
+    if formato == "JPEG" and imagem.mode in ("RGBA", "P"):
+        # JPEG não suporta transparência — achata sobre fundo branco antes
+        # de converter, senão o Pillow lança erro ao salvar.
+        imagem = imagem.convert("RGB")
+    buffer = io.BytesIO()
+    imagem.save(buffer, format=formato)
+    return buffer.getvalue()
+
+
+def salvar_foto(db: Session, material: Material, conteudo: bytes, content_type: str | None) -> Material:
+    if content_type not in TIPOS_FOTO_PERMITIDOS:
+        raise FotoInvalida("Formato de imagem não suportado — envie JPEG, PNG ou WebP.")
+    if len(conteudo) > TAMANHO_MAXIMO_FOTO_BYTES:
+        raise FotoInvalida("Imagem maior que o limite permitido (5MB).")
+
+    try:
+        thumb = _gerar_thumbnail(conteudo, content_type)
+    except Exception as exc:
+        # Content-type declarado bate com a whitelist, mas o conteúdo não é
+        # uma imagem decodificável de verdade (arquivo corrompido ou
+        # content-type forjado) — o Pillow lança várias exceções diferentes
+        # dependendo do caso, não só `UnidentifiedImageError`.
+        raise FotoInvalida("Não foi possível processar o arquivo como imagem.") from exc
+
+    material.foto = conteudo
+    material.foto_content_type = content_type
+    material.foto_thumb = thumb
+    db.commit()
+    db.refresh(material)
+    return material
+
+
+def remover_foto(db: Session, material: Material) -> None:
+    material.foto = None
+    material.foto_content_type = None
+    material.foto_thumb = None
     db.commit()
