@@ -66,7 +66,9 @@ def test_aprovar_cria_pessoa_e_marca_situacao(client, db_session, usuario_legado
     assert corpo["id_pessoa"] is not None
     assert corpo["id_usuario_analise"] == usuario_legado.id
 
-    pessoa = client.get(f"/api/pessoas/{corpo['id_pessoa']}").json()
+    pessoa = client.get(
+        f"/api/pessoas/{corpo['id_pessoa']}", headers=_auth_header(usuario_legado)
+    ).json()
     assert pessoa["nome"] == "Ana Maria Bona"
     assert pessoa["cpf"] == "12345678900"
     assert pessoa["telefone_principal"] == "(42) 99999-0000"

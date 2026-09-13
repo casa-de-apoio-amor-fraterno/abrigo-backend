@@ -9,14 +9,20 @@ def _auth_header(usuario) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_listar_vazio(client):
-    resposta = client.get("/api/pessoas")
+def test_listar_vazio(client, usuario_legado):
+    resposta = client.get("/api/pessoas", headers=_auth_header(usuario_legado))
 
     assert resposta.status_code == 200
     assert resposta.json() == {"items": [], "total": 0}
 
 
-def test_listar_com_busca_por_nome(client, db_session):
+def test_listar_exige_login(client):
+    resposta = client.get("/api/pessoas")
+
+    assert resposta.status_code == 401
+
+
+def test_listar_com_busca_por_nome(client, db_session, usuario_legado):
     db_session.add_all(
         [
             Pessoa(
@@ -35,7 +41,9 @@ def test_listar_com_busca_por_nome(client, db_session):
     )
     db_session.commit()
 
-    resposta = client.get("/api/pessoas", params={"busca": "maria"})
+    resposta = client.get(
+        "/api/pessoas", params={"busca": "maria"}, headers=_auth_header(usuario_legado)
+    )
 
     assert resposta.status_code == 200
     corpo = resposta.json()
@@ -43,7 +51,7 @@ def test_listar_com_busca_por_nome(client, db_session):
     assert corpo["items"][0]["nome"] == "Maria da Silva"
 
 
-def test_listar_nao_traz_pessoa_inativa(client, db_session):
+def test_listar_nao_traz_pessoa_inativa(client, db_session, usuario_legado):
     db_session.add(
         Pessoa(
             nome="Pessoa Inativa",
@@ -54,12 +62,12 @@ def test_listar_nao_traz_pessoa_inativa(client, db_session):
     )
     db_session.commit()
 
-    resposta = client.get("/api/pessoas")
+    resposta = client.get("/api/pessoas", headers=_auth_header(usuario_legado))
 
     assert resposta.json()["total"] == 0
 
 
-def test_listar_com_busca_por_cpf(client, db_session):
+def test_listar_com_busca_por_cpf(client, db_session, usuario_legado):
     db_session.add_all(
         [
             Pessoa(
@@ -78,13 +86,23 @@ def test_listar_com_busca_por_cpf(client, db_session):
     )
     db_session.commit()
 
-    resposta = client.get("/api/pessoas", params={"busca": "2222"})
+    resposta = client.get(
+        "/api/pessoas", params={"busca": "2222"}, headers=_auth_header(usuario_legado)
+    )
 
     assert resposta.status_code == 200
     assert resposta.json()["total"] == 1
 
 
-def test_criar_e_buscar_pessoa(client):
+def test_criar_pessoa_exige_login(client):
+    resposta = client.post(
+        "/api/pessoas",
+        json={"nome": "Ana Paula", "data_nascimento": "1995-03-20"},
+    )
+    assert resposta.status_code == 401
+
+
+def test_criar_e_buscar_pessoa(client, usuario_legado):
     resposta = client.post(
         "/api/pessoas",
         json={
@@ -92,17 +110,18 @@ def test_criar_e_buscar_pessoa(client):
             "cpf": "33333333333",
             "data_nascimento": "1995-03-20",
         },
+        headers=_auth_header(usuario_legado),
     )
     assert resposta.status_code == 201
     pessoa_id = resposta.json()["id"]
 
-    resposta = client.get(f"/api/pessoas/{pessoa_id}")
+    resposta = client.get(f"/api/pessoas/{pessoa_id}", headers=_auth_header(usuario_legado))
     assert resposta.status_code == 200
     assert resposta.json()["nome"] == "Ana Paula"
     assert resposta.json()["telefone_principal"] is None
 
 
-def test_criar_pessoa_com_contatos_aninhados(client):
+def test_criar_pessoa_com_contatos_aninhados(client, usuario_legado):
     resposta = client.post(
         "/api/pessoas",
         json={
@@ -113,12 +132,15 @@ def test_criar_pessoa_com_contatos_aninhados(client):
                 {"numero": "42988880000", "nome_contato": "Vizinha"},
             ],
         },
+        headers=_auth_header(usuario_legado),
     )
     assert resposta.status_code == 201
     pessoa_id = resposta.json()["id"]
     assert resposta.json()["telefone_principal"] == "42999990000"
 
-    resposta = client.get(f"/api/pessoas/{pessoa_id}/contatos")
+    resposta = client.get(
+        f"/api/pessoas/{pessoa_id}/contatos", headers=_auth_header(usuario_legado)
+    )
     assert resposta.status_code == 200
     contatos = resposta.json()
     assert len(contatos) == 2
@@ -149,7 +171,7 @@ def test_criar_pessoa_com_composicao_familiar_aninhada(client, usuario_legado):
     assert membros[0]["nome"] == "Pedro Souza"
 
 
-def test_criar_pessoa_com_composicao_familiar_sem_token_retorna_403(client):
+def test_criar_pessoa_com_composicao_familiar_sem_token_retorna_401(client):
     resposta = client.post(
         "/api/pessoas",
         json={
@@ -158,7 +180,7 @@ def test_criar_pessoa_com_composicao_familiar_sem_token_retorna_403(client):
             "composicao_familiar": [{"nome": "Filho", "grau_parentesco": "Filho"}],
         },
     )
-    assert resposta.status_code == 403
+    assert resposta.status_code == 401
 
 
 def test_criar_pessoa_com_composicao_familiar_perfil_errado_retorna_403(client, usuario_migrado):
@@ -174,135 +196,149 @@ def test_criar_pessoa_com_composicao_familiar_perfil_errado_retorna_403(client, 
     assert resposta.status_code == 403
 
 
-def test_contatos_de_pessoa(client):
+def test_contatos_de_pessoa(client, usuario_legado):
+    headers = _auth_header(usuario_legado)
     pessoa_id = client.post(
-        "/api/pessoas", json={"nome": "Beatriz", "data_nascimento": "1980-01-01"}
+        "/api/pessoas", json={"nome": "Beatriz", "data_nascimento": "1980-01-01"}, headers=headers
     ).json()["id"]
 
     resposta = client.post(
         f"/api/pessoas/{pessoa_id}/contatos",
         json={"numero": "47988132030", "nome_contato": "Esposa", "principal": True},
+        headers=headers,
     )
     assert resposta.status_code == 201
     contato_id = resposta.json()["id"]
 
     resposta = client.post(
-        f"/api/pessoas/{pessoa_id}/contatos", json={"numero": "111"}
+        f"/api/pessoas/{pessoa_id}/contatos", json={"numero": "111"}, headers=headers
     )
     assert resposta.status_code == 201
 
-    resposta = client.get(f"/api/pessoas/{pessoa_id}")
+    resposta = client.get(f"/api/pessoas/{pessoa_id}", headers=headers)
     assert resposta.json()["telefone_principal"] == "47988132030"
 
-    resposta = client.get(f"/api/pessoas/{pessoa_id}/contatos")
+    resposta = client.get(f"/api/pessoas/{pessoa_id}/contatos", headers=headers)
     assert len(resposta.json()) == 2
 
     resposta = client.put(
-        f"/api/pessoas/{pessoa_id}/contatos/{contato_id}", json={"numero": "222"}
+        f"/api/pessoas/{pessoa_id}/contatos/{contato_id}", json={"numero": "222"}, headers=headers
     )
     assert resposta.status_code == 200
     assert resposta.json()["numero"] == "222"
 
-    resposta = client.delete(f"/api/pessoas/{pessoa_id}/contatos/{contato_id}")
+    resposta = client.delete(
+        f"/api/pessoas/{pessoa_id}/contatos/{contato_id}", headers=headers
+    )
     assert resposta.status_code == 204
 
-    resposta = client.get(f"/api/pessoas/{pessoa_id}/contatos")
+    resposta = client.get(f"/api/pessoas/{pessoa_id}/contatos", headers=headers)
     assert len(resposta.json()) == 1
 
 
-def test_contato_de_pessoa_inexistente(client):
+def test_contato_de_pessoa_inexistente(client, usuario_legado):
+    headers = _auth_header(usuario_legado)
     pessoa_id = client.post(
-        "/api/pessoas", json={"nome": "Carla", "data_nascimento": "1980-01-01"}
+        "/api/pessoas", json={"nome": "Carla", "data_nascimento": "1980-01-01"}, headers=headers
     ).json()["id"]
 
     resposta = client.put(
-        f"/api/pessoas/{pessoa_id}/contatos/999", json={"numero": "111"}
+        f"/api/pessoas/{pessoa_id}/contatos/999", json={"numero": "111"}, headers=headers
     )
     assert resposta.status_code == 404
 
-    resposta = client.delete(f"/api/pessoas/{pessoa_id}/contatos/999")
+    resposta = client.delete(f"/api/pessoas/{pessoa_id}/contatos/999", headers=headers)
     assert resposta.status_code == 404
 
 
-def test_buscar_pessoa_inexistente(client):
-    resposta = client.get("/api/pessoas/999")
+def test_buscar_pessoa_inexistente(client, usuario_legado):
+    resposta = client.get("/api/pessoas/999", headers=_auth_header(usuario_legado))
 
     assert resposta.status_code == 404
 
 
-def _criar_pessoa(client, nome: str = "Foto Teste") -> int:
+def _criar_pessoa(client, usuario_legado, nome: str = "Foto Teste") -> int:
     resposta = client.post(
         "/api/pessoas",
         json={"nome": nome, "data_nascimento": "1990-01-01"},
+        headers=_auth_header(usuario_legado),
     )
     return resposta.json()["id"]
 
 
-def test_pessoa_sem_foto_tem_tem_foto_falso(client):
-    pessoa_id = _criar_pessoa(client)
+def test_pessoa_sem_foto_tem_tem_foto_falso(client, usuario_legado):
+    pessoa_id = _criar_pessoa(client, usuario_legado)
 
-    resposta = client.get(f"/api/pessoas/{pessoa_id}")
+    resposta = client.get(f"/api/pessoas/{pessoa_id}", headers=_auth_header(usuario_legado))
 
     assert resposta.json()["tem_foto"] is False
 
 
-def test_obter_foto_inexistente_retorna_404(client):
-    pessoa_id = _criar_pessoa(client)
+def test_obter_foto_inexistente_retorna_404(client, usuario_legado):
+    pessoa_id = _criar_pessoa(client, usuario_legado)
 
-    resposta = client.get(f"/api/pessoas/{pessoa_id}/foto")
+    resposta = client.get(
+        f"/api/pessoas/{pessoa_id}/foto", headers=_auth_header(usuario_legado)
+    )
 
     assert resposta.status_code == 404
 
 
-def test_salvar_e_obter_foto(client):
-    pessoa_id = _criar_pessoa(client)
+def test_salvar_e_obter_foto(client, usuario_legado):
+    headers = _auth_header(usuario_legado)
+    pessoa_id = _criar_pessoa(client, usuario_legado)
     conteudo = b"conteudo-fake-de-imagem"
 
     resposta = client.put(
         f"/api/pessoas/{pessoa_id}/foto",
         files={"arquivo": ("foto.jpg", conteudo, "image/jpeg")},
+        headers=headers,
     )
     assert resposta.status_code == 200
     assert resposta.json()["tem_foto"] is True
 
-    resposta = client.get(f"/api/pessoas/{pessoa_id}/foto")
+    resposta = client.get(f"/api/pessoas/{pessoa_id}/foto", headers=headers)
     assert resposta.status_code == 200
     assert resposta.headers["content-type"] == "image/jpeg"
     assert resposta.content == conteudo
 
 
-def test_salvar_foto_formato_nao_suportado(client):
-    pessoa_id = _criar_pessoa(client)
+def test_salvar_foto_formato_nao_suportado(client, usuario_legado):
+    pessoa_id = _criar_pessoa(client, usuario_legado)
 
     resposta = client.put(
         f"/api/pessoas/{pessoa_id}/foto",
         files={"arquivo": ("foto.gif", b"abc", "image/gif")},
+        headers=_auth_header(usuario_legado),
     )
 
     assert resposta.status_code == 400
 
 
-def test_salvar_foto_maior_que_limite(client):
-    pessoa_id = _criar_pessoa(client)
+def test_salvar_foto_maior_que_limite(client, usuario_legado):
+    pessoa_id = _criar_pessoa(client, usuario_legado)
     conteudo_grande = b"a" * (5 * 1024 * 1024 + 1)
 
     resposta = client.put(
         f"/api/pessoas/{pessoa_id}/foto",
         files={"arquivo": ("foto.jpg", conteudo_grande, "image/jpeg")},
+        headers=_auth_header(usuario_legado),
     )
 
     assert resposta.status_code == 400
 
 
-def test_remover_foto(client):
-    pessoa_id = _criar_pessoa(client)
+def test_remover_foto(client, usuario_legado):
+    headers = _auth_header(usuario_legado)
+    pessoa_id = _criar_pessoa(client, usuario_legado)
     client.put(
         f"/api/pessoas/{pessoa_id}/foto",
         files={"arquivo": ("foto.jpg", b"conteudo", "image/jpeg")},
+        headers=headers,
     )
 
-    resposta = client.delete(f"/api/pessoas/{pessoa_id}/foto")
+    resposta = client.delete(f"/api/pessoas/{pessoa_id}/foto", headers=headers)
     assert resposta.status_code == 204
 
-    resposta = client.get(f"/api/pessoas/{pessoa_id}")
+    resposta = client.get(f"/api/pessoas/{pessoa_id}", headers=headers)
     assert resposta.json()["tem_foto"] is False
