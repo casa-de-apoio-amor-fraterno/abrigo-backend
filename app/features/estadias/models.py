@@ -62,6 +62,12 @@ class Estadia(Base):
     id_pessoa: Mapped[int] = mapped_column(ForeignKey("pessoa.id_pessoa"))
     id_quarto: Mapped[int] = mapped_column(ForeignKey("quarto.id_quarto"))
     id_usuario: Mapped[int] = mapped_column(ForeignKey("usuario.id_usuario"))
+    # Movido de `Pessoa.id_hospital` (migração 0020, ver estadia.legacy.md):
+    # o hospital é contextual a UM atendimento/estadia, não um atributo
+    # permanente da pessoa — mesmo raciocínio já aplicado a `tipo_pessoa`.
+    # `Pessoa.id_hospital` continua existindo como fallback pra pessoas sem
+    # nenhuma estadia (ex.: só tomaram empréstimo), decisão do time.
+    id_hospital: Mapped[int | None] = mapped_column(ForeignKey("hospital.id_hospital"), nullable=True)
     data_entrada: Mapped[datetime] = mapped_column(DateTime)
     data_saida: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     tempo_estadia: Mapped[str | None] = mapped_column(String(60), nullable=True)

@@ -133,3 +133,46 @@ campo depreciado editável), substituído por um input numérico +
 `mat-select` de unidade. O valor legado (quando existir e não tiver
 sido migrado) não aparece mais na tela — só via API, pra quem precisar
 consultar o histórico bruto.
+
+## `id_hospital` movido de `Pessoa` pra `Estadia` (migração 0020, 2026-09-13)
+
+Mesmo raciocínio já usado pra `tipo_pessoa` (ver `pessoa.legacy.md`):
+`pessoa.id_hospital` era tratado como atributo permanente da pessoa, mas o
+hospital é contextual a UM atendimento — a mesma pessoa pode passar por
+hospitais diferentes em estadias diferentes, e o campo fixo em `Pessoa`
+sobrescrevia o valor a cada nova estadia, sem histórico.
+
+**Levantamento no dump real antes de decidir** (`abrigo_teste`,
+2026-09-13, 5.329 pessoas / 4.422 estadias):
+- 5.310 pessoas (99,6%) têm `id_hospital` preenchido; 5.001 (93,9%) têm
+  `observacao` preenchida.
+- `id_hospital` está sobrecarregado no legado: `'Empréstimo Solidário'`
+  (2.133 registros) e `'Doação de fralda'` (22) não são hospitais de
+  verdade, são categoria de motivo do atendimento reaproveitando a mesma
+  FK — achado que não estava óbvio antes de olhar a distribuição real.
+- **2.541 dessas pessoas (quase metade) não têm nenhuma `Estadia`**: 2.065
+  só têm empréstimo, 279 são acompanhantes (`EstadiaAcompanhante`) sem
+  leito próprio, 197 sem vínculo nenhum. Mover o campo inteiramente pra
+  `Estadia` deixaria esses registros órfãos.
+
+**Decisão do time:** `Estadia.id_hospital` (novo, nullable) vira a fonte de
+verdade quando existe estadia. `Pessoa.id_hospital`/`observacao`
+**permanecem** no schema como fallback — não removidos — justamente pra não
+perder o dado dessas ~2.541 pessoas sem estadia.
+
+**Backfill** (migração 0020, SQL puro — mesmo padrão de 0018): para cada
+pessoa com hospital/observação preenchidos, propaga pra sua estadia mais
+recente (`data_entrada` desc — heurística, não dá pra saber retroativamente
+qual estadia era a certa). `observacao` é **concatenada**
+(`pessoa.observacao || '\n\n' || estadia.observacao`), nunca sobrescrita,
+quando a estadia alvo já tem texto próprio (1.844 casos no dump real).
+Pessoas com múltiplas estadias (~832 no dump) só recebem o backfill na mais
+recente — as estadias antigas da mesma pessoa não ganham hospital/
+observação adicional (assumir que o dado da pessoa valia pra TODAS as
+estadias seria pior que não aplicar às antigas).
+
+**Frontend**: `Estadia` ganhou o campo "Hospital" na aba "Dados" (ao lado
+de "Observação", já existente). A aba "Atendimento" do cadastro de pessoa
+continua existindo — não é mais o lugar recomendado pra registrar
+hospital/observação de quem tem estadia, mas seguiu ativa pro caso de
+pessoas sem estadia (empréstimo-only).

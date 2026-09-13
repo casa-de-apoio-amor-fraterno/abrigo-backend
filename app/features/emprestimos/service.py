@@ -171,9 +171,32 @@ def inativar(db: Session, emprestimo: Emprestimo) -> None:
     db.commit()
 
 
+def _anexar_material(db: Session, itens: list[EmprestimoItem]) -> list[EmprestimoItem]:
+    """Anexa `descricao_material`/`tem_foto_material` (atributos transientes,
+    não persistidos em `emprestimo_item`) a cada item, pra popular
+    `EmprestimoItemResponse` sem N+1 — usado pelo front pra mostrar a
+    descrição e a miniatura do material no popover de devolução."""
+    if not itens:
+        return itens
+    materiais = {
+        m.id: m
+        for m in db.scalars(
+            select(Material).where(Material.id.in_({item.id_material for item in itens}))
+        )
+    }
+    for item in itens:
+        material = materiais.get(item.id_material)
+        item.descricao_material = (  # type: ignore[attr-defined]
+            material.descricao if material else f"material #{item.id_material}"
+        )
+        item.tem_foto_material = material.tem_foto if material else False  # type: ignore[attr-defined]
+    return itens
+
+
 def listar_itens(db: Session, emprestimo_id: int) -> list[EmprestimoItem]:
     consulta = select(EmprestimoItem).where(EmprestimoItem.id_emprestimo == emprestimo_id)
-    return list(db.scalars(consulta.order_by(EmprestimoItem.id)).all())
+    itens = list(db.scalars(consulta.order_by(EmprestimoItem.id)).all())
+    return _anexar_material(db, itens)
 
 
 def adicionar_item(db: Session, emprestimo_id: int, dados: EmprestimoItemCreate) -> EmprestimoItem:
@@ -190,6 +213,7 @@ def adicionar_item(db: Session, emprestimo_id: int, dados: EmprestimoItemCreate)
     _registrar_historico(
         db, emprestimo_id, dados.id_usuario, "Item incluído", f"Item incluído: {_descricao_item(db, item)}"
     )
+    _anexar_material(db, [item])
     return item
 
 
@@ -211,6 +235,7 @@ def atualizar_item(
     _registrar_historico(
         db, item.id_emprestimo, dados.id_usuario, "Item alterado", f"Item alterado: {_descricao_item(db, item)}"
     )
+    _anexar_material(db, [item])
     return item
 
 

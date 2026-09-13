@@ -9,6 +9,7 @@ class EstadiaBase(BaseModel):
     id_pessoa: int
     id_quarto: int
     id_usuario: int
+    id_hospital: int | None = None
     data_entrada: datetime
     data_saida: datetime | None = None
     tempo_estadia: str | None = Field(
@@ -54,6 +55,11 @@ class EstadiaUpdate(EstadiaBase):
 
 class EstadiaEncerrarRequest(BaseModel):
     data_saida: datetime | None = None
+    # Calculado no frontend a partir de data_entrada/data_saida (ver
+    # estadia.legacy.md) — opcional aqui pra não quebrar quem chama esse
+    # endpoint sem informar (fica None, mesmo comportamento de sempre).
+    tempo_estadia_valor: int | None = None
+    tempo_estadia_unidade: UnidadeTempoEstadia | None = None
 
 
 class EstadiaResumoResponse(BaseModel):

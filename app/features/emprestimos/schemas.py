@@ -54,6 +54,11 @@ class EmprestimoItemResponse(EmprestimoItemBase):
     # "Devolvido" (ver service.py) — não é aceita como input do cliente,
     # ao contrário de `data_devolucao` (prevista, digitada manualmente).
     data_devolucao_efetiva: date | None
+    # Anexados pelo service a partir de `Material` (não são colunas de
+    # `emprestimo_item`) — usados pelo front pra mostrar descrição e
+    # miniatura do material no popover de devolução, sem round-trip extra.
+    descricao_material: str
+    tem_foto_material: bool
 
 
 class EmprestimoCreate(EmprestimoBase):

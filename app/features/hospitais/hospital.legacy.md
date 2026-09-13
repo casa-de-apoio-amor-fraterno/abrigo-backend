@@ -18,9 +18,18 @@ usada como categoria genérica de origem/encaminhamento — não só hospitais
 Mantido fiel ao dado legado, sem tentar "corrigir" os nomes.
 
 `GET /api/hospitais` lista só ativos por padrão (`apenas_ativos=true`),
-como em `pessoa`. CRUD só de leitura por ora — não há evidência de tela de
-cadastro no legado.
+como em `pessoa`.
+
+## CRUD completo (2026-09-13)
+
+Apesar de não haver tela de cadastro própria no legado, o time decidiu
+implementar CRUD completo (`POST`/`PUT`/`DELETE`) — mesmo padrão de
+`quartos` (`inativar` marca `ativo = false`, não deleta a linha, pra não
+quebrar `Estadia.id_hospital`/`Pessoa.id_hospital` que referenciam o
+registro). Motivador: `Estadia.id_hospital` (ver `estadia.legacy.md`) passou
+a ser editável pela equipe, e não fazia sentido não poder cadastrar um
+hospital novo sem mexer direto no banco.
 
 ## Status
-Mapeado e implementado (somente leitura). Dados reais entram via ETL
+Mapeado e implementado (CRUD completo). Dados reais entram via ETL
 (`docs/migracao-postgres.md`), não pela migração Alembic.
