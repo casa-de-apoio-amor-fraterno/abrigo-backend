@@ -42,3 +42,25 @@ def test_login_usuario_inativo_e_bloqueado(client, usuario_inativo):
     resposta = client.post("/api/auth/login", json={"usuario": "thiago", "senha": "plantonista"})
 
     assert resposta.status_code == 401
+
+
+def test_login_bloqueia_apos_muitas_tentativas_erradas(client, usuario_legado):
+    for _ in range(5):
+        resposta = client.post("/api/auth/login", json={"usuario": "joana", "senha": "errada"})
+        assert resposta.status_code == 401
+
+    resposta = client.post("/api/auth/login", json={"usuario": "joana", "senha": "123456"})
+
+    assert resposta.status_code == 429
+
+
+def test_login_correto_nao_conta_para_o_limite(client, usuario_legado):
+    for _ in range(4):
+        resposta = client.post("/api/auth/login", json={"usuario": "joana", "senha": "errada"})
+        assert resposta.status_code == 401
+
+    resposta = client.post("/api/auth/login", json={"usuario": "joana", "senha": "123456"})
+    assert resposta.status_code == 200
+
+    resposta = client.post("/api/auth/login", json={"usuario": "joana", "senha": "123456"})
+    assert resposta.status_code == 200

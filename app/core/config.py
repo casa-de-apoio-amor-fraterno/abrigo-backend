@@ -8,7 +8,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://usuario:senha@localhost:5432/abrigo"
     cors_origins: list[str] = ["http://localhost:4200"]
 
-    jwt_secret_key: str = "altere-esta-chave-em-producao-para-algo-com-32-bytes-ou-mais"
+    # Sem default: um fallback conhecido aqui permitiria forjar token de
+    # qualquer usuário caso a env var não seja definida em algum deploy.
+    # A app deve falhar ao subir, não subir insegura silenciosamente.
+    jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     jwt_expires_minutes: int = 60 * 8
 
@@ -26,6 +29,13 @@ class Settings(BaseSettings):
                 "liste os domínios de origem explicitamente"
             )
         return origins
+
+    @field_validator("jwt_secret_key")
+    @classmethod
+    def _exigir_tamanho_minimo(cls, chave: str) -> str:
+        if len(chave) < 32:
+            raise ValueError("jwt_secret_key precisa ter pelo menos 32 caracteres")
+        return chave
 
 
 settings = Settings()

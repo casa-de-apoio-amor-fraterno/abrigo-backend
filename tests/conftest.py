@@ -4,6 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core import rate_limit
 from app.core.database import Base, get_db
 from app.core.security import hash_senha
 from app.features.usuarios.models import Usuario
@@ -33,6 +34,7 @@ def client(db_session):
         yield db_session
 
     app.dependency_overrides[get_db] = _get_db_override
+    rate_limit._falhas.clear()
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
