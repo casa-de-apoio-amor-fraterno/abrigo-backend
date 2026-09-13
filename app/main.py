@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.features.auth.router import router as auth_router
 from app.features.avaliacao_social.router import router as avaliacao_social_router
 from app.features.composicao_familiar.router import router as composicao_familiar_router
+from app.features.contrato_demo.router import router as contrato_demo_router
 from app.features.emprestimos.router import router as emprestimos_router
 from app.features.estadias.router import router as estadias_router
 from app.features.estados.router import router as estados_router
@@ -43,6 +44,9 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(
+    contrato_demo_router, prefix="/api/contrato-demo", tags=["contrato-demo (protótipo)"]
+)
 app.include_router(pessoas_router, prefix="/api/pessoas", tags=["pessoas"])
 app.include_router(estados_router, prefix="/api/estados", tags=["estados"])
 app.include_router(municipios_router, prefix="/api/municipios", tags=["municipios"])

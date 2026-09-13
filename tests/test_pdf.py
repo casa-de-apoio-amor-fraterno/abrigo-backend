@@ -1,4 +1,14 @@
+import io
+
+from PIL import Image
+
 from app.shared.pdf import DocumentoPDF
+
+
+def _png_1x1() -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (1, 1), color="black").save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def test_documento_pdf_gera_bytes_de_um_pdf_valido():
@@ -27,6 +37,17 @@ def test_documento_pdf_nao_quebra_com_pontuacao_tipografica():
     conteudo = pdf.gerar_bytes()
 
     assert conteudo.startswith(b"%PDF-")
+
+
+def test_campo_assinatura_com_imagem_gera_pdf_valido():
+    pdf = DocumentoPDF(titulo="Contrato com assinatura desenhada")
+    pdf.paragrafo("Texto do contrato antes da assinatura.")
+    pdf.campo_assinatura("Assinatura do paciente", imagem_assinatura=_png_1x1())
+
+    conteudo = pdf.gerar_bytes()
+
+    assert conteudo.startswith(b"%PDF-")
+    assert len(conteudo) > 500
 
 
 def test_documento_pdf_quebra_pagina_com_texto_longo():

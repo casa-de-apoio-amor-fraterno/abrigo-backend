@@ -14,6 +14,8 @@ Uso típico:
     conteudo: bytes = pdf.gerar_bytes()
 """
 
+import io
+
 from fpdf import FPDF
 
 NOME_ENTIDADE = "Casa de Apoio Amor Fraterno"
@@ -68,10 +70,23 @@ class DocumentoPDF(FPDF):
         self.multi_cell(0, 6, _texto_seguro(texto), align="J")
         self.ln(3)
 
-    def campo_assinatura(self, rotulo: str) -> None:
-        self.ln(15)
+    def campo_assinatura(self, rotulo: str, imagem_assinatura: bytes | None = None) -> None:
+        """Linha de assinatura. Se `imagem_assinatura` for passado (PNG
+        capturado do canvas de assinatura por toque/caneta — ver
+        `shared/ui/assinatura-canvas` no frontend), desenha o traço colado
+        em cima da linha em vez de deixar em branco pra assinar à caneta no
+        papel impresso."""
         largura_linha = 100
         x_inicial = (self.w - largura_linha) / 2
+
+        if imagem_assinatura is not None:
+            altura_imagem = 18
+            self.ln(4)
+            self.image(io.BytesIO(imagem_assinatura), x=x_inicial, w=largura_linha, h=altura_imagem)
+            self.ln(1)
+        else:
+            self.ln(15)
+
         self.set_x(x_inicial)
         self.cell(largura_linha, 0, border="T")
         self.ln(2)
