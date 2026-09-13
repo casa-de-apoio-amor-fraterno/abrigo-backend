@@ -9,6 +9,7 @@ from app.features.estadias.schemas import (
     EstadiaAcompanhanteResponse,
     EstadiaCreate,
     EstadiaEncerrarRequest,
+    EstadiaHistoricoResponse,
     EstadiaResponse,
     EstadiaResumoResponse,
     EstadiaUpdate,
@@ -67,7 +68,15 @@ def encerrar(
     estadia = service.buscar(db, estadia_id)
     if estadia is None:
         raise HTTPException(status_code=404, detail="Estadia não encontrada")
-    return EstadiaResponse.model_validate(service.encerrar(db, estadia, dados.data_saida))
+    estadia = service.encerrar(
+        db,
+        estadia,
+        dados.data_saida,
+        dados.tempo_estadia_valor,
+        dados.tempo_estadia_unidade,
+        dados.id_usuario,
+    )
+    return EstadiaResponse.model_validate(estadia)
 
 
 @router.get("/{estadia_id}/acompanhantes", response_model=list[EstadiaAcompanhanteResponse])
@@ -93,3 +102,13 @@ def adicionar_acompanhante(
     return EstadiaAcompanhanteResponse.model_validate(
         service.adicionar_acompanhante(db, estadia_id, dados)
     )
+
+
+@router.get("/{estadia_id}/historico", response_model=list[EstadiaHistoricoResponse])
+def listar_historico(estadia_id: int, db: Session = Depends(get_db)) -> list[EstadiaHistoricoResponse]:
+    estadia = service.buscar(db, estadia_id)
+    if estadia is None:
+        raise HTTPException(status_code=404, detail="Estadia não encontrada")
+    return [
+        EstadiaHistoricoResponse.model_validate(h) for h in service.listar_historico(db, estadia_id)
+    ]

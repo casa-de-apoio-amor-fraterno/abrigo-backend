@@ -120,3 +120,29 @@ class EstadiaAcompanhante(Base):
     data_entrada: Mapped[datetime] = mapped_column(DateTime)
     data_saida: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     grau_parentesco: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+class EstadiaHistorico(Base):
+    """Mapeia a tabela `estadia_historico` — trilha de auditoria (roadmap de
+    tudo que ocorreu durante a estadia), mesmo padrão de
+    `EmprestimoHistorico` (ver `app/features/emprestimos/models.py`). Sem
+    equivalente no legado — feature nova (2026-09-13), motivada pela mesma
+    lacuna que levou `EmprestimoHistorico` a existir: sem uma trilha
+    própria, a única forma de saber o que aconteceu durante uma estadia era
+    o campo `observacao` livre, que qualquer edição sobrescreve sem deixar
+    rastro do valor anterior. Registrada automaticamente pelo backend
+    (nunca por escrita direta do cliente) — ver `service.py`
+    (`_registrar_historico`).
+
+    `tipo` é texto livre (mesmo padrão de `EmprestimoHistorico.tipo`),
+    valores usados: 'Inclusão', 'Alteração', 'Encerramento'.
+    """
+
+    __tablename__ = "estadia_historico"
+
+    id: Mapped[int] = mapped_column("id_estadia_historico", primary_key=True)
+    id_estadia: Mapped[int] = mapped_column(ForeignKey("estadia.id_estadia"))
+    id_usuario: Mapped[int] = mapped_column(ForeignKey("usuario.id_usuario"))
+    tipo: Mapped[str] = mapped_column(String(20))
+    observacao: Mapped[str] = mapped_column(Text)
+    data_cadastro: Mapped[datetime] = mapped_column(DateTime)

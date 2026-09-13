@@ -176,3 +176,41 @@ de "Observação", já existente). A aba "Atendimento" do cadastro de pessoa
 continua existindo — não é mais o lugar recomendado pra registrar
 hospital/observação de quem tem estadia, mas seguiu ativa pro caso de
 pessoas sem estadia (empréstimo-only).
+
+## `EstadiaHistorico` — roadmap de eventos da estadia (2026-09-13)
+
+Mesma lacuna que motivou `EmprestimoHistorico` (ver
+`emprestimos/models.py`): sem uma trilha própria, a única forma de saber o
+que aconteceu durante uma estadia era o campo `observacao` livre — qualquer
+edição sobrescreve o texto anterior sem deixar rastro. Sem equivalente no
+legado, feature nova.
+
+`EstadiaHistorico` (`id`, `id_estadia`, `id_usuario`, `tipo`, `observacao`,
+`data_cadastro`) é gravado automaticamente pelo backend
+(`service._registrar_historico`), nunca por escrita direta do cliente:
+
+- **"Inclusão"** — ao criar a estadia (`service.criar`).
+- **"Alteração"** — ao editar (`service.atualizar`), só quando algum campo
+  relevante (`id_quarto`, `id_hospital`, `tipo_pessoa`, `situacao`,
+  `data_entrada`, `data_saida`, `tempo_estadia_valor`/`unidade`,
+  `observacao`) realmente mudou de valor — `service._descricao_alteracao`
+  compara antes de sobrescrever e monta um diff tipo `"Situação: Em
+  acompanhamento -> Finalizada"`. Um PUT idempotente (nada muda) não gera
+  entrada vazia no histórico.
+- **"Encerramento"** — ao chamar `POST /{id}/encerrar`, só se `id_usuario`
+  foi informado no corpo (`EstadiaEncerrarRequest.id_usuario`, opcional —
+  ver nota abaixo).
+
+**Por que `id_usuario` é opcional em `EstadiaEncerrarRequest`:** esse
+endpoint já tinha chamadores em produção (frontend) sem esse campo antes
+desta feature existir. Tornar obrigatório quebraria quem ainda não foi
+atualizado pra mandá-lo — em vez disso, o encerramento simplesmente não
+fica no histórico quando `id_usuario` não vem, e o resto do fluxo
+(finalizar a estadia) funciona normalmente. Não cobre ainda inclusão/
+remoção de `EstadiaAcompanhante` (sem `id_usuario` no schema atual) — fica
+como próximo passo natural se a equipe quiser esse evento no roadmap
+também.
+
+`GET /api/estadias/{id}/historico` retorna a lista ordenada por
+`data_cadastro` decrescente (mais recente primeiro), mesmo padrão de
+`GET /api/emprestimos/{id}/historico`.

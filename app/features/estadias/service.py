@@ -3,12 +3,70 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.features.estadias.models import Estadia, EstadiaAcompanhante, SituacaoEstadia
+from app.features.estadias.models import (
+    Estadia,
+    EstadiaAcompanhante,
+    EstadiaHistorico,
+    SituacaoEstadia,
+    UnidadeTempoEstadia,
+)
 from app.features.estadias.schemas import (
     EstadiaAcompanhanteCreate,
     EstadiaCreate,
     EstadiaUpdate,
 )
+
+# Rótulo em português de cada campo que entra no diff de "Alteração" do
+# histórico (ver `_descricao_alteracao`) — mesmo espírito de
+# `emprestimos/service.py._descricao_item`, mas comparando campo a campo em
+# vez de montar uma descrição fixa, já que aqui o que importa é O QUE mudou.
+_ROTULOS_HISTORICO: dict[str, str] = {
+    "id_quarto": "Quarto",
+    "id_hospital": "Hospital",
+    "tipo_pessoa": "Tipo de pessoa",
+    "situacao": "Situação",
+    "data_entrada": "Data de entrada",
+    "data_saida": "Data de saída",
+    "tempo_estadia_valor": "Tempo estadia (valor)",
+    "tempo_estadia_unidade": "Tempo estadia (unidade)",
+    "observacao": "Observação",
+}
+
+
+def _registrar_historico(
+    db: Session, id_estadia: int, id_usuario: int, tipo: str, observacao: str
+) -> None:
+    db.add(
+        EstadiaHistorico(
+            id_estadia=id_estadia,
+            id_usuario=id_usuario,
+            tipo=tipo,
+            observacao=observacao,
+            # Coluna `DateTime` sem timezone (mesmo padrão de
+            # `EmprestimoHistorico.data_cadastro`) — grava naive em UTC.
+            data_cadastro=datetime.now(UTC).replace(tzinfo=None),
+        )
+    )
+    db.commit()
+
+
+def _descricao_alteracao(estadia: Estadia, dados: EstadiaUpdate) -> str | None:
+    """Compara os campos relevantes ANTES de `atualizar` sobrescrevê-los —
+    retorna None quando nada realmente mudou, pra não poluir o histórico
+    com uma entrada "Alteração" vazia a cada PUT idempotente."""
+    novos_valores = dados.model_dump()
+    mudancas = []
+    for campo, rotulo in _ROTULOS_HISTORICO.items():
+        valor_antigo = getattr(estadia, campo)
+        valor_antigo = valor_antigo.value if hasattr(valor_antigo, "value") else valor_antigo
+        # `model_dump()` (modo Python, não "json") mantém enums como
+        # instância — sem isso, o diff mostra "SituacaoEstadia.FINALIZADA"
+        # em vez de "Finalizada".
+        valor_novo = novos_valores.get(campo)
+        valor_novo = valor_novo.value if hasattr(valor_novo, "value") else valor_novo
+        if valor_antigo != valor_novo:
+            mudancas.append(f"{rotulo}: {valor_antigo or '-'} -> {valor_novo or '-'}")
+    return "; ".join(mudancas) if mudancas else None
 
 
 def listar(
@@ -55,23 +113,58 @@ def criar(db: Session, dados: EstadiaCreate) -> Estadia:
 
     db.commit()
     db.refresh(estadia)
+    _registrar_historico(
+        db,
+        estadia.id,
+        dados.id_usuario,
+        "Inclusão",
+        f"Estadia criada — quarto #{estadia.id_quarto}, {estadia.tipo_pessoa.value}, "
+        f"situação {estadia.situacao.value}.",
+    )
     return estadia
 
 
 def atualizar(db: Session, estadia: Estadia, dados: EstadiaUpdate) -> Estadia:
+    descricao = _descricao_alteracao(estadia, dados)
     for campo, valor in dados.model_dump().items():
         setattr(estadia, campo, valor)
     db.commit()
     db.refresh(estadia)
+    if descricao:
+        _registrar_historico(db, estadia.id, dados.id_usuario, "Alteração", descricao)
     return estadia
 
 
-def encerrar(db: Session, estadia: Estadia, data_saida: datetime | None = None) -> Estadia:
+def encerrar(
+    db: Session,
+    estadia: Estadia,
+    data_saida: datetime | None = None,
+    tempo_estadia_valor: int | None = None,
+    tempo_estadia_unidade: UnidadeTempoEstadia | None = None,
+    id_usuario: int | None = None,
+) -> Estadia:
     estadia.situacao = SituacaoEstadia.FINALIZADA
     estadia.data_saida = data_saida or datetime.now(UTC).replace(tzinfo=None)
     estadia.ativo = False
+    # Calculado no frontend a partir de data_entrada/data_saida (ver
+    # estadia.legacy.md) — só sobrescreve quando informado, pra não apagar
+    # um valor já existente ao encerrar sem passar por aqui.
+    if tempo_estadia_valor is not None:
+        estadia.tempo_estadia_valor = tempo_estadia_valor
+    if tempo_estadia_unidade is not None:
+        estadia.tempo_estadia_unidade = tempo_estadia_unidade
     db.commit()
     db.refresh(estadia)
+    # Opcional (ver EstadiaEncerrarRequest.id_usuario) — só registra no
+    # histórico quando quem chamou informou o usuário responsável.
+    if id_usuario is not None:
+        _registrar_historico(
+            db,
+            estadia.id,
+            id_usuario,
+            "Encerramento",
+            f"Estadia encerrada em {estadia.data_saida.strftime('%d/%m/%Y')}.",
+        )
     return estadia
 
 
@@ -88,3 +181,8 @@ def adicionar_acompanhante(
     db.commit()
     db.refresh(acompanhante)
     return acompanhante
+
+
+def listar_historico(db: Session, estadia_id: int) -> list[EstadiaHistorico]:
+    consulta = select(EstadiaHistorico).where(EstadiaHistorico.id_estadia == estadia_id)
+    return list(db.scalars(consulta.order_by(EstadiaHistorico.data_cadastro.desc())).all())

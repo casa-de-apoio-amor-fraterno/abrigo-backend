@@ -177,6 +177,34 @@ def test_encerrar_estadia(client, db_session):
     assert corpo["ativo"] is False
 
 
+def test_encerrar_estadia_com_tempo_calculado(client, db_session):
+    deps = _criar_dependencias(db_session)
+    estadia = Estadia(
+        id_pessoa=deps["pessoa"].id,
+        id_quarto=deps["quarto"].id,
+        id_usuario=deps["usuario"].id,
+        data_entrada=datetime(2026, 1, 1),
+        situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+    )
+    db_session.add(estadia)
+    db_session.commit()
+    db_session.refresh(estadia)
+
+    resposta = client.post(
+        f"/api/estadias/{estadia.id}/encerrar",
+        json={
+            "data_saida": "2026-01-04T00:00:00",
+            "tempo_estadia_valor": 3,
+            "tempo_estadia_unidade": "dias",
+        },
+    )
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["tempo_estadia_valor"] == 3
+    assert corpo["tempo_estadia_unidade"] == "dias"
+
+
 def test_adicionar_e_listar_acompanhante(client, db_session):
     deps = _criar_dependencias(db_session)
     acompanhante = Pessoa(
@@ -222,5 +250,143 @@ def test_buscar_estadia_inexistente(client):
 
 def test_acompanhantes_de_estadia_inexistente(client):
     resposta = client.get("/api/estadias/999/acompanhantes")
+
+    assert resposta.status_code == 404
+
+
+def test_criar_estadia_registra_historico_de_inclusao(client, db_session):
+    deps = _criar_dependencias(db_session)
+
+    resposta = client.post(
+        "/api/estadias",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_quarto": deps["quarto"].id,
+            "id_usuario": deps["usuario"].id,
+            "data_entrada": "2026-01-10T00:00:00",
+            "situacao": "Em acompanhamento",
+        },
+    )
+    estadia_id = resposta.json()["id"]
+
+    resposta = client.get(f"/api/estadias/{estadia_id}/historico")
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert len(corpo) == 1
+    assert corpo[0]["tipo"] == "Inclusão"
+    assert corpo[0]["id_usuario"] == deps["usuario"].id
+
+
+def test_atualizar_estadia_registra_historico_de_alteracao(client, db_session):
+    deps = _criar_dependencias(db_session)
+    estadia = Estadia(
+        id_pessoa=deps["pessoa"].id,
+        id_quarto=deps["quarto"].id,
+        id_usuario=deps["usuario"].id,
+        data_entrada=datetime(2026, 1, 1),
+        situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+    )
+    db_session.add(estadia)
+    db_session.commit()
+    db_session.refresh(estadia)
+
+    resposta = client.put(
+        f"/api/estadias/{estadia.id}",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_quarto": deps["quarto"].id,
+            "id_usuario": deps["usuario"].id,
+            "data_entrada": "2026-01-01T00:00:00",
+            "situacao": "Aguardando retorno",
+        },
+    )
+    assert resposta.status_code == 200
+
+    resposta = client.get(f"/api/estadias/{estadia.id}/historico")
+    corpo = resposta.json()
+    assert len(corpo) == 1
+    assert corpo[0]["tipo"] == "Alteração"
+    # Enum precisa aparecer pelo `.value` ("Aguardando retorno"), não pelo
+    # nome da instância Python ("SituacaoEstadia.AGUARDANDO_RETORNO").
+    assert "Situação: Em acompanhamento -> Aguardando retorno" in corpo[0]["observacao"]
+
+
+def test_atualizar_estadia_sem_mudanca_nao_registra_historico(client, db_session):
+    deps = _criar_dependencias(db_session)
+    estadia = Estadia(
+        id_pessoa=deps["pessoa"].id,
+        id_quarto=deps["quarto"].id,
+        id_usuario=deps["usuario"].id,
+        data_entrada=datetime(2026, 1, 1),
+        situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+    )
+    db_session.add(estadia)
+    db_session.commit()
+    db_session.refresh(estadia)
+
+    resposta = client.put(
+        f"/api/estadias/{estadia.id}",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_quarto": deps["quarto"].id,
+            "id_usuario": deps["usuario"].id,
+            "data_entrada": "2026-01-01T00:00:00",
+            "situacao": "Em acompanhamento",
+        },
+    )
+    assert resposta.status_code == 200
+
+    resposta = client.get(f"/api/estadias/{estadia.id}/historico")
+    assert resposta.json() == []
+
+
+def test_encerrar_estadia_com_id_usuario_registra_historico(client, db_session):
+    deps = _criar_dependencias(db_session)
+    estadia = Estadia(
+        id_pessoa=deps["pessoa"].id,
+        id_quarto=deps["quarto"].id,
+        id_usuario=deps["usuario"].id,
+        data_entrada=datetime(2026, 1, 1),
+        situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+    )
+    db_session.add(estadia)
+    db_session.commit()
+    db_session.refresh(estadia)
+
+    resposta = client.post(
+        f"/api/estadias/{estadia.id}/encerrar",
+        json={"id_usuario": deps["usuario"].id},
+    )
+    assert resposta.status_code == 200
+
+    resposta = client.get(f"/api/estadias/{estadia.id}/historico")
+    corpo = resposta.json()
+    assert len(corpo) == 1
+    assert corpo[0]["tipo"] == "Encerramento"
+
+
+def test_encerrar_estadia_sem_id_usuario_nao_registra_historico(client, db_session):
+    deps = _criar_dependencias(db_session)
+    estadia = Estadia(
+        id_pessoa=deps["pessoa"].id,
+        id_quarto=deps["quarto"].id,
+        id_usuario=deps["usuario"].id,
+        data_entrada=datetime(2026, 1, 1),
+        situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+    )
+    db_session.add(estadia)
+    db_session.commit()
+    db_session.refresh(estadia)
+
+    resposta = client.post(f"/api/estadias/{estadia.id}/encerrar")
+    assert resposta.status_code == 200
+
+    resposta = client.get(f"/api/estadias/{estadia.id}/historico")
+    assert resposta.json() == []
+
+
+def test_historico_de_estadia_inexistente(client):
+    resposta = client.get("/api/estadias/999/historico")
 
     assert resposta.status_code == 404

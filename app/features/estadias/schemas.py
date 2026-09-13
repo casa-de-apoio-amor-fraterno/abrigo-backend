@@ -60,6 +60,11 @@ class EstadiaEncerrarRequest(BaseModel):
     # endpoint sem informar (fica None, mesmo comportamento de sempre).
     tempo_estadia_valor: int | None = None
     tempo_estadia_unidade: UnidadeTempoEstadia | None = None
+    # Opcional só pra não quebrar chamadas existentes que ainda não mandam
+    # esse campo — sem ele, o encerramento não fica registrado no
+    # histórico (ver `EstadiaHistorico`/`service.encerrar`), mas o resto do
+    # fluxo funciona normalmente.
+    id_usuario: int | None = None
 
 
 class EstadiaResumoResponse(BaseModel):
@@ -81,3 +86,14 @@ class EstadiaResponse(EstadiaBase):
 
     id: int
     ativo: bool | None
+
+
+class EstadiaHistoricoResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    id_estadia: int
+    id_usuario: int
+    tipo: str
+    observacao: str
+    data_cadastro: datetime
