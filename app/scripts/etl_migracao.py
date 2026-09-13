@@ -35,6 +35,7 @@ dependência primeiro, depois `municipio` (depende de `estado`), `pessoa`
 """
 
 import argparse
+import re
 import sys
 from collections.abc import Callable
 
@@ -57,8 +58,22 @@ from app.features.voluntarios.models import Voluntario, VoluntarioContato
 from app.scripts.etl import transformacoes as t
 from app.scripts.etl.reconciliacao import RegistroAcompanhamento, reconciliar
 
+_IDENTIFICADOR_VALIDO = re.compile(r"^[a-z_][a-z0-9_]*$")
+
+
+def _validar_identificador(nome: str) -> str:
+    """Recusa qualquer coisa que não seja um identificador SQL simples antes
+    de interpolar num f-string de query. Os nomes usados neste script são
+    todos constantes internas (nunca vêm de input externo/usuário), mas essa
+    trava evita que o padrão de interpolação crua vire um risco real se o
+    código mudar no futuro."""
+    if not _IDENTIFICADOR_VALIDO.match(nome):
+        raise ValueError(f"Identificador de tabela/coluna inválido: {nome!r}")
+    return nome
+
 
 def _ler_tabela(conexao_origem, tabela: str) -> list[dict]:
+    _validar_identificador(tabela)
     resultado = conexao_origem.execute(text(f"SELECT * FROM `{tabela}`"))
     return [dict(linha._mapping) for linha in resultado]
 
@@ -75,6 +90,8 @@ def _resincronizar_sequencia(sessao_destino: Session, modelo_destino: type[Base]
 
     tabela = modelo_destino.__table__
     coluna_pk = next(iter(tabela.primary_key.columns)).name
+    _validar_identificador(tabela.name)
+    _validar_identificador(coluna_pk)
     sessao_destino.execute(
         text(
             f"SELECT setval(pg_get_serial_sequence('{tabela.name}', '{coluna_pk}'), "

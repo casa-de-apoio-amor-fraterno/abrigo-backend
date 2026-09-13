@@ -1,5 +1,8 @@
-from fastapi import FastAPI
+import logging
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.features.auth.router import router as auth_router
@@ -16,7 +19,20 @@ from app.features.quartos.router import router as quartos_router
 from app.features.solicitacoes_cadastro.router import router as solicitacoes_cadastro_router
 from app.features.voluntarios.router import router as voluntarios_router
 
+logger = logging.getLogger("app")
+
 app = FastAPI(title="Abrigo — Casa de Apoio Amor Fraterno", version="0.1.0")
+
+
+@app.exception_handler(Exception)
+async def excecao_nao_tratada(request: Request, exc: Exception) -> JSONResponse:
+    # Sem isto, uma exceção não prevista vazava detalhe interno (stack
+    # trace/mensagem da lib) na resposta em vez de um erro genérico —
+    # exceções esperadas (HTTPException, validação do Pydantic) continuam
+    # tratadas pelos handlers próprios do FastAPI, mais específicos que este.
+    logger.exception("Erro não tratado em %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Erro interno do servidor"})
+
 
 app.add_middleware(
     CORSMiddleware,
