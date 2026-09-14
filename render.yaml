@@ -1,0 +1,26 @@
+# Blueprint do Render (https://render.com/docs/blueprint-spec) — cria o
+# serviço a partir deste repo automaticamente via "New > Blueprint" no
+# dashboard, apontando pra este repositório. Build via Docker (ver
+# Dockerfile) — a imagem já builda o frontend (repo separado) junto.
+#
+# Segredos reais (DATABASE_URL, CORS_ORIGINS) ficam com `sync: false`: o
+# Render pede pra preencher manualmente no dashboard na primeira vez, nunca
+# ficam neste arquivo nem no repositório.
+services:
+  - name: abrigo-backend
+    type: web
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_EXPIRES_MINUTES
+        value: "480"
