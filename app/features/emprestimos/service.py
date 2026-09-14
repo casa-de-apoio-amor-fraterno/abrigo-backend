@@ -3,7 +3,12 @@ from datetime import UTC, date, datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.features.emprestimos.models import Emprestimo, EmprestimoHistorico, EmprestimoItem
+from app.features.emprestimos.models import (
+    Emprestimo,
+    EmprestimoContrato,
+    EmprestimoHistorico,
+    EmprestimoItem,
+)
 from app.features.emprestimos.schemas import (
     EmprestimoCreate,
     EmprestimoItemCreate,
@@ -11,6 +16,10 @@ from app.features.emprestimos.schemas import (
     EmprestimoUpdate,
 )
 from app.features.materiais.models import Material
+from app.features.pessoas.models import Pessoa
+from app.features.usuarios.models import Usuario
+from app.shared.imagem import Base64Invalido, decodificar_base64_imagem
+from app.shared.pdf import DocumentoPDF
 
 
 def _registrar_historico(
@@ -279,3 +288,115 @@ def devolver(
 def listar_historico(db: Session, emprestimo_id: int) -> list[EmprestimoHistorico]:
     consulta = select(EmprestimoHistorico).where(EmprestimoHistorico.id_emprestimo == emprestimo_id)
     return list(db.scalars(consulta.order_by(EmprestimoHistorico.data_cadastro.desc())).all())
+
+
+class ContratoJaAssinado(Exception):
+    pass
+
+
+class ContratoDadosIncompletos(Exception):
+    pass
+
+
+TAMANHO_MAXIMO_ASSINATURA_BYTES = 2 * 1024 * 1024
+
+# Rascunho genérico — feature nova, sem termo equivalente no legado pra
+# migrar (ver emprestimo.legacy.md). Ainda não passou por revisão jurídica;
+# ajustar o texto aqui conforme a entidade definir o modelo final.
+_CLAUSULA_PREAMBULO = (
+    "Pelo presente termo, a {entidade}, por meio de {usuario}, empresta a "
+    "{pessoa} o(s) material(is) abaixo relacionado(s), mediante as condições "
+    "estabelecidas neste documento."
+)
+_CLAUSULA_RESPONSABILIDADE = (
+    "Ao assinar este termo, {pessoa} se compromete a: (i) utilizar o(s) "
+    "material(is) emprestado(s) com zelo e para a finalidade a que se "
+    "destina(m); (ii) devolvê-lo(s) até a(s) data(s) prevista(s) acima, ou "
+    "solicitar renovação junto à {entidade} antes do vencimento; (iii) arcar "
+    "com o reparo ou a reposição em caso de dano, perda ou extravio do "
+    "material, ressalvado o desgaste natural pelo uso; (iv) comunicar "
+    "imediatamente qualquer problema com o material emprestado."
+)
+
+
+def _linha_item_contrato(db: Session, item: EmprestimoItem) -> str:
+    material = db.get(Material, item.id_material)
+    descricao_material = material.descricao if material else f"material #{item.id_material}"
+    data_emprestimo = item.data_emprestimo.strftime("%d/%m/%Y") if item.data_emprestimo else "-"
+    data_devolucao = item.data_devolucao.strftime("%d/%m/%Y") if item.data_devolucao else "-"
+    return f"- {descricao_material} (empréstimo: {data_emprestimo}, devolução prevista: {data_devolucao})"
+
+
+def _gerar_pdf_contrato(
+    db: Session,
+    emprestimo: Emprestimo,
+    pessoa: Pessoa,
+    usuario: Usuario,
+    itens: list[EmprestimoItem],
+    assinatura_png: bytes,
+) -> bytes:
+    identificador = emprestimo.numero_contrato or f"#{emprestimo.id}"
+    pdf = DocumentoPDF(titulo=f"Termo de Responsabilidade - Empréstimo {identificador}")
+
+    pessoa_descricao = pessoa.nome + (f", CPF {pessoa.cpf}" if pessoa.cpf else "")
+    pdf.paragrafo(
+        _CLAUSULA_PREAMBULO.format(
+            entidade="Casa de Apoio Amor Fraterno", usuario=usuario.nome, pessoa=pessoa_descricao
+        )
+    )
+
+    linhas_itens = "\n".join(_linha_item_contrato(db, item) for item in itens) or "- (nenhum item registrado)"
+    pdf.paragrafo(linhas_itens)
+
+    pdf.paragrafo(
+        _CLAUSULA_RESPONSABILIDADE.format(entidade="Casa de Apoio Amor Fraterno", pessoa=pessoa.nome)
+    )
+
+    pdf.campo_assinatura(f"Assinatura de {pessoa.nome}", imagem_assinatura=assinatura_png)
+    pdf.paragrafo(f"Registrado por {usuario.nome} em {date.today().strftime('%d/%m/%Y')}.")
+
+    return pdf.gerar_bytes()
+
+
+def buscar_contrato(db: Session, emprestimo_id: int) -> EmprestimoContrato | None:
+    return db.scalar(
+        select(EmprestimoContrato).where(EmprestimoContrato.id_emprestimo == emprestimo_id)
+    )
+
+
+def criar_contrato(
+    db: Session, emprestimo: Emprestimo, id_usuario: int, assinatura_png_base64: str
+) -> EmprestimoContrato:
+    if buscar_contrato(db, emprestimo.id) is not None:
+        raise ContratoJaAssinado("Este empréstimo já tem um contrato assinado.")
+
+    assinatura_png = decodificar_base64_imagem(assinatura_png_base64)
+    if len(assinatura_png) > TAMANHO_MAXIMO_ASSINATURA_BYTES:
+        raise Base64Invalido("Assinatura maior que o limite permitido (2MB).")
+
+    pessoa = db.get(Pessoa, emprestimo.id_pessoa)
+    usuario = db.get(Usuario, id_usuario)
+    if pessoa is None or usuario is None:
+        raise ContratoDadosIncompletos("Pessoa ou usuário do empréstimo não encontrado.")
+
+    itens = list(
+        db.scalars(select(EmprestimoItem).where(EmprestimoItem.id_emprestimo == emprestimo.id)).all()
+    )
+    pdf_bytes = _gerar_pdf_contrato(db, emprestimo, pessoa, usuario, itens, assinatura_png)
+
+    contrato = EmprestimoContrato(
+        id_emprestimo=emprestimo.id,
+        id_usuario=id_usuario,
+        assinatura=assinatura_png,
+        pdf=pdf_bytes,
+        data_assinatura=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add(contrato)
+    db.commit()
+    db.refresh(contrato)
+
+    _registrar_historico(
+        db, emprestimo.id, id_usuario, "Contrato assinado", "Termo de responsabilidade assinado."
+    )
+
+    return contrato

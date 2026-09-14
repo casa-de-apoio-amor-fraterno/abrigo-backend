@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 # Situação de empréstimo/item: combo fechado no legado (constantes de
 # `CasaApoio.Material.Constants.pas`, reaproveitadas por Emprestimo apesar
@@ -106,3 +106,19 @@ class EmprestimoHistoricoResponse(BaseModel):
     tipo: str
     observacao: str
     data_cadastro: datetime
+
+
+class EmprestimoContratoCreate(BaseModel):
+    # PNG do canvas de assinatura, em base64 — aceita tanto a string crua
+    # quanto uma data URL completa (`HTMLCanvasElement.toDataURL()`). Ver
+    # `app/shared/imagem.decodificar_base64_imagem`.
+    assinatura_png_base64: str = Field(min_length=1)
+
+
+class EmprestimoContratoResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    id_emprestimo: int
+    id_usuario: int
+    data_assinatura: datetime

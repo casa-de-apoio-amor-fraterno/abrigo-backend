@@ -121,7 +121,44 @@ Migração `0010_emprestimo_historico`. 7 testes novos cobrindo
 inclusão/alteração/item, incluindo os dois casos de diff de observação
 (acréscimo vs. substituição total) e o caso "sem mudança não registra".
 
+## Contrato assinado (`EmprestimoContrato`, adicionado 2026-09-14)
+
+Termo de responsabilidade assinado por toque/caneta no tablet — feature
+nova, **sem equivalente no legado**: confirmado no código-fonte Delphi que
+não existe nenhum termo/contrato gerado pelo sistema, só o campo texto
+livre `emprestimo.numero_contrato` (o termo, se existia, era feito em
+papel fora do sistema — `untFrmRelatorioEmprestimo` é uma tela de
+listagem/filtro, não um documento assinável).
+
+Decisões confirmadas com o usuário (2026-09-14):
+- **Texto das cláusulas é um rascunho genérico** (`service._CLAUSULA_*`),
+  não um termo já usado pela entidade — não passou por revisão jurídica,
+  ajustar conforme a entidade definir o modelo final.
+- **Um contrato por empréstimo** (`EmprestimoContrato.id_emprestimo` é
+  `unique`) — assina uma vez; renovação/alteração de item não gera novo
+  termo. Tentar assinar de novo retorna 409.
+- **PDF congelado no momento da assinatura**: os bytes do PDF já assinado
+  ficam salvos em `EmprestimoContrato.pdf` (igual a um papel assinado);
+  editar o empréstimo depois (ex. observação) não altera o documento já
+  assinado, porque ele não é regerado sob demanda.
+
+Endpoints (`router.py`, todos exigindo login — `usuario_atual`, diferente
+do resto do CRUD de `emprestimos` que hoje não exige nada, gap conhecido):
+`POST /emprestimos/{id}/contrato` (recebe a assinatura em PNG base64, ver
+`app/shared/imagem.decodificar_base64_imagem` — aceita data URL ou base64
+cru; gera e persiste o PDF via `app/shared/pdf.DocumentoPDF`), `GET
+/emprestimos/{id}/contrato` (metadados) e `GET
+/emprestimos/{id}/contrato/pdf` (bytes do PDF). Registra
+`EmprestimoHistorico` (`tipo='Contrato assinado'`) — mesmo padrão de
+auditoria já usado pro resto do empréstimo.
+
+Migração `0022_emprestimo_contrato`. Protótipo anterior do fluxo de
+assinatura (canvas em tela cheia no frontend, endpoint descartável
+`/api/contrato-demo`) documentado nas mensagens do projeto — este é o
+primeiro uso real, ligado a uma entidade de verdade.
+
 ## Status
 Mapeado e implementado (CRUD completo + sub-recurso de itens + histórico
-de auditoria). Dados reais (exceto histórico, que não existia no dump)
-entram via ETL (`docs/migracao-postgres.md`), não pela migração Alembic.
+de auditoria + contrato assinado). Dados reais (exceto histórico e
+contrato, que não existiam no dump) entram via ETL
+(`docs/migracao-postgres.md`), não pela migração Alembic.

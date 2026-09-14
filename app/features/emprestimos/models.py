@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -90,3 +90,35 @@ class EmprestimoHistorico(Base):
     tipo: Mapped[str] = mapped_column(String(20))
     observacao: Mapped[str] = mapped_column(Text)
     data_cadastro: Mapped[datetime] = mapped_column(DateTime)
+
+
+class EmprestimoContrato(Base):
+    """Termo de responsabilidade assinado pela pessoa que toma o(s)
+    material(is) emprestado(s) — feature nova (2026-09-13), sem equivalente
+    no legado (que só guardava `Emprestimo.numero_contrato` como texto
+    livre; o termo em si, se existia, era feito em papel fora do sistema —
+    ver `emprestimo.legacy.md`).
+
+    Um empréstimo tem no máximo um contrato (`id_emprestimo` é `unique`) —
+    decisão do usuário: assina uma vez, na criação do empréstimo;
+    renovação/alteração de item não gera novo termo.
+
+    `pdf` é o documento **assinado, congelado no momento da assinatura**
+    (decisão do usuário: igual a um papel assinado, editar o empréstimo
+    depois — ex. observação — não deve alterar o que já foi assinado). Por
+    isso o service gera e guarda os bytes do PDF aqui, em vez de recriá-lo
+    sob demanda a partir dos dados atuais do empréstimo. `assinatura` (PNG
+    cru) também é guardada separada, à parte do PDF, só como registro
+    auxiliar (não é exposta por nenhum endpoint hoje).
+    """
+
+    __tablename__ = "emprestimo_contrato"
+
+    id: Mapped[int] = mapped_column("id_emprestimo_contrato", primary_key=True)
+    id_emprestimo: Mapped[int] = mapped_column(
+        ForeignKey("emprestimo.id_emprestimo"), unique=True
+    )
+    id_usuario: Mapped[int] = mapped_column(ForeignKey("usuario.id_usuario"))
+    assinatura: Mapped[bytes] = mapped_column(LargeBinary)
+    pdf: Mapped[bytes] = mapped_column(LargeBinary)
+    data_assinatura: Mapped[datetime] = mapped_column(DateTime)

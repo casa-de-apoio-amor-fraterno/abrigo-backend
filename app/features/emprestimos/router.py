@@ -1,9 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.features.auth.dependencies import usuario_atual
 from app.features.emprestimos import service
 from app.features.emprestimos.schemas import (
+    EmprestimoContratoCreate,
+    EmprestimoContratoResponse,
     EmprestimoCreate,
     EmprestimoDevolverRequest,
     EmprestimoHistoricoResponse,
@@ -15,6 +19,8 @@ from app.features.emprestimos.schemas import (
     EmprestimoUpdate,
     SituacaoEmprestimo,
 )
+from app.features.usuarios.models import Usuario
+from app.shared.imagem import Base64Invalido
 
 router = APIRouter()
 
@@ -113,3 +119,48 @@ def listar_historico(emprestimo_id: int, db: Session = Depends(get_db)) -> list[
     return [
         EmprestimoHistoricoResponse.model_validate(h) for h in service.listar_historico(db, emprestimo_id)
     ]
+
+
+@router.get(
+    "/{emprestimo_id}/contrato",
+    response_model=EmprestimoContratoResponse,
+    dependencies=[Depends(usuario_atual)],
+)
+def buscar_contrato(emprestimo_id: int, db: Session = Depends(get_db)) -> EmprestimoContratoResponse:
+    contrato = service.buscar_contrato(db, emprestimo_id)
+    if contrato is None:
+        raise HTTPException(status_code=404, detail="Este empréstimo ainda não tem contrato assinado")
+    return EmprestimoContratoResponse.model_validate(contrato)
+
+
+@router.get("/{emprestimo_id}/contrato/pdf", dependencies=[Depends(usuario_atual)])
+def obter_pdf_contrato(emprestimo_id: int, db: Session = Depends(get_db)) -> Response:
+    contrato = service.buscar_contrato(db, emprestimo_id)
+    if contrato is None:
+        raise HTTPException(status_code=404, detail="Este empréstimo ainda não tem contrato assinado")
+    return Response(content=contrato.pdf, media_type="application/pdf")
+
+
+@router.post(
+    "/{emprestimo_id}/contrato",
+    response_model=EmprestimoContratoResponse,
+    status_code=201,
+)
+def assinar_contrato(
+    emprestimo_id: int,
+    dados: EmprestimoContratoCreate,
+    usuario: Usuario = Depends(usuario_atual),
+    db: Session = Depends(get_db),
+) -> EmprestimoContratoResponse:
+    emprestimo = service.buscar(db, emprestimo_id)
+    if emprestimo is None:
+        raise HTTPException(status_code=404, detail="Empréstimo não encontrado")
+    try:
+        contrato = service.criar_contrato(db, emprestimo, usuario.id, dados.assinatura_png_base64)
+    except service.ContratoJaAssinado as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except service.ContratoDadosIncompletos as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Base64Invalido as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return EmprestimoContratoResponse.model_validate(contrato)
