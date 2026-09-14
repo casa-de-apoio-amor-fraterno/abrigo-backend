@@ -1,8 +1,10 @@
 import logging
+import os
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.core.config import settings
 from app.features.auth.router import router as auth_router
@@ -76,3 +78,28 @@ app.include_router(
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# Serve o build de produção do Angular (`npm run build` em abrigo-frontend)
+# pelo mesmo processo/porta da API — pensado pra dar pro cliente uma build
+# de teste com uma única porta pra abrir no firewall (ver
+# docs/build-de-teste.md), não é a topologia definitiva de produção. Só
+# ativa se a pasta existir (não interfere no fluxo normal de dev com `ng
+# serve`, nem nos testes, que não geram esse build). Caminho e diretório
+# irmão de abrigo-backend por padrão; `FRONTEND_DIST_DIR` sobrescreve.
+_DIST_PADRAO = Path(__file__).resolve().parent.parent.parent / "abrigo-frontend/dist/abrigo-frontend/browser"
+_frontend_dist = Path(os.environ.get("FRONTEND_DIST_DIR", _DIST_PADRAO)).resolve()
+
+if _frontend_dist.is_dir():
+
+    @app.get("/{caminho_completo:path}")
+    async def servir_frontend(caminho_completo: str) -> FileResponse:
+        candidato = (_frontend_dist / caminho_completo).resolve()
+        # Serve o arquivo estático (JS/CSS/imagem) se existir; qualquer
+        # outra rota (as do Angular Router, ex. /pessoas/5/editar) cai no
+        # index.html — é o próprio Angular, no navegador, que resolve a
+        # rota certa a partir da URL. `is_relative_to` impede path
+        # traversal (ex. `caminho_completo="../../.env"`).
+        if candidato.is_file() and candidato.is_relative_to(_frontend_dist):
+            return FileResponse(candidato)
+        return FileResponse(_frontend_dist / "index.html")
