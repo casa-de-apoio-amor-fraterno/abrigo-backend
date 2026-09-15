@@ -15,6 +15,7 @@ from app.features.estadias.schemas import (
     EstadiaCreate,
     EstadiaUpdate,
 )
+from app.features.quartos.models import Quarto
 
 # Rótulo em português de cada campo que entra no diff de "Alteração" do
 # histórico (ver `_descricao_alteracao`) — mesmo espírito de
@@ -50,7 +51,17 @@ def _registrar_historico(
     db.commit()
 
 
-def _descricao_alteracao(estadia: Estadia, dados: EstadiaUpdate) -> str | None:
+def _numero_quarto(db: Session, id_quarto: int | None) -> str | None:
+    """Traduz `id_quarto` (chave interna) pro `numero` que o front exibe —
+    sem isso, o histórico mostra o id do banco (ex.: "quarto #22") em vez
+    do número real do quarto (ex.: "00"), que não têm relação nenhuma."""
+    if id_quarto is None:
+        return None
+    quarto = db.get(Quarto, id_quarto)
+    return quarto.numero if quarto else None
+
+
+def _descricao_alteracao(db: Session, estadia: Estadia, dados: EstadiaUpdate) -> str | None:
     """Compara os campos relevantes ANTES de `atualizar` sobrescrevê-los —
     retorna None quando nada realmente mudou, pra não poluir o histórico
     com uma entrada "Alteração" vazia a cada PUT idempotente."""
@@ -64,6 +75,9 @@ def _descricao_alteracao(estadia: Estadia, dados: EstadiaUpdate) -> str | None:
         # em vez de "Finalizada".
         valor_novo = novos_valores.get(campo)
         valor_novo = valor_novo.value if hasattr(valor_novo, "value") else valor_novo
+        if campo == "id_quarto":
+            valor_antigo = _numero_quarto(db, valor_antigo)
+            valor_novo = _numero_quarto(db, valor_novo)
         if valor_antigo != valor_novo:
             mudancas.append(f"{rotulo}: {valor_antigo or '-'} -> {valor_novo or '-'}")
     return "; ".join(mudancas) if mudancas else None
@@ -113,19 +127,20 @@ def criar(db: Session, dados: EstadiaCreate) -> Estadia:
 
     db.commit()
     db.refresh(estadia)
+    numero_quarto = _numero_quarto(db, estadia.id_quarto) or f"#{estadia.id_quarto}"
     _registrar_historico(
         db,
         estadia.id,
         dados.id_usuario,
         "Inclusão",
-        f"Estadia criada — quarto #{estadia.id_quarto}, {estadia.tipo_pessoa.value}, "
+        f"Estadia criada — quarto {numero_quarto}, {estadia.tipo_pessoa.value}, "
         f"situação {estadia.situacao.value}.",
     )
     return estadia
 
 
 def atualizar(db: Session, estadia: Estadia, dados: EstadiaUpdate) -> Estadia:
-    descricao = _descricao_alteracao(estadia, dados)
+    descricao = _descricao_alteracao(db, estadia, dados)
     for campo, valor in dados.model_dump().items():
         setattr(estadia, campo, valor)
     db.commit()
