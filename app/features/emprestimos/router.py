@@ -22,7 +22,7 @@ from app.features.emprestimos.schemas import (
 from app.features.usuarios.models import Usuario
 from app.shared.imagem import Base64Invalido
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(usuario_atual)])
 
 
 @router.get("")
@@ -121,11 +121,7 @@ def listar_historico(emprestimo_id: int, db: Session = Depends(get_db)) -> list[
     ]
 
 
-@router.get(
-    "/{emprestimo_id}/contrato",
-    response_model=EmprestimoContratoResponse,
-    dependencies=[Depends(usuario_atual)],
-)
+@router.get("/{emprestimo_id}/contrato", response_model=EmprestimoContratoResponse)
 def buscar_contrato(emprestimo_id: int, db: Session = Depends(get_db)) -> EmprestimoContratoResponse:
     contrato = service.buscar_contrato(db, emprestimo_id)
     if contrato is None:
@@ -133,7 +129,7 @@ def buscar_contrato(emprestimo_id: int, db: Session = Depends(get_db)) -> Empres
     return EmprestimoContratoResponse.model_validate(contrato)
 
 
-@router.get("/{emprestimo_id}/contrato/pdf", dependencies=[Depends(usuario_atual)])
+@router.get("/{emprestimo_id}/contrato/pdf")
 def obter_pdf_contrato(emprestimo_id: int, db: Session = Depends(get_db)) -> Response:
     contrato = service.buscar_contrato(db, emprestimo_id)
     if contrato is None:

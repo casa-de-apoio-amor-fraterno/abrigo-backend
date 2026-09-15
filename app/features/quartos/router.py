@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.features.auth.dependencies import usuario_atual
 from app.features.quartos import service
 from app.features.quartos.schemas import (
     QuartoCreate,
@@ -10,7 +11,7 @@ from app.features.quartos.schemas import (
     QuartoUpdate,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(usuario_atual)])
 
 
 @router.get("", response_model=list[QuartoResponse])

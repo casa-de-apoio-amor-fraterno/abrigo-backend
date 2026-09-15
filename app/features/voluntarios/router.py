@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.features.auth.dependencies import usuario_atual
 from app.features.voluntarios import service
 from app.features.voluntarios.schemas import (
     VoluntarioContatoCreate,
@@ -13,7 +14,7 @@ from app.features.voluntarios.schemas import (
     VoluntarioUpdate,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(usuario_atual)])
 
 
 @router.get("")

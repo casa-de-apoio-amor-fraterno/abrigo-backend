@@ -3,6 +3,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.features.auth.dependencies import usuario_atual
 from app.features.materiais import service
 from app.features.materiais.schemas import (
     MaterialCreate,
@@ -11,7 +12,7 @@ from app.features.materiais.schemas import (
     MaterialUpdate,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(usuario_atual)])
 
 
 @router.get("")

@@ -2,10 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.features.auth.dependencies import usuario_atual
 from app.features.estados import service
 from app.features.estados.schemas import EstadoResponse
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(usuario_atual)])
 
 
 @router.get("", response_model=list[EstadoResponse])

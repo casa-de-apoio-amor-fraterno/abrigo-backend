@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.features.auth.dependencies import usuario_atual
 from app.features.estadias import service
 from app.features.estadias.models import SituacaoEstadia
 from app.features.estadias.schemas import (
@@ -15,7 +16,7 @@ from app.features.estadias.schemas import (
     EstadiaUpdate,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(usuario_atual)])
 
 
 @router.get("")

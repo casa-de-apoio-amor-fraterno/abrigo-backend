@@ -1,19 +1,31 @@
 from datetime import date, datetime
 
+from app.core.security import criar_token_acesso
 from app.features.estadias.models import Estadia, SituacaoEstadia
 from app.features.pessoas.models import Pessoa
 from app.features.quartos.models import Quarto
 from app.features.usuarios.models import Usuario
 
 
-def test_listar_vazio(client):
+def _auth_header(usuario) -> dict:
+    token = criar_token_acesso(usuario.id)
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_listar_exige_login(client):
     resposta = client.get("/api/quartos")
+
+    assert resposta.status_code == 401
+
+
+def test_listar_vazio(client, usuario_legado):
+    resposta = client.get("/api/quartos", headers=_auth_header(usuario_legado))
 
     assert resposta.status_code == 200
     assert resposta.json() == []
 
 
-def test_listar_nao_traz_inativo_por_padrao(client, db_session):
+def test_listar_nao_traz_inativo_por_padrao(client, db_session, usuario_legado):
     db_session.add_all(
         [
             Quarto(numero="11", leito=4, ativo=True),
@@ -22,7 +34,7 @@ def test_listar_nao_traz_inativo_por_padrao(client, db_session):
     )
     db_session.commit()
 
-    resposta = client.get("/api/quartos")
+    resposta = client.get("/api/quartos", headers=_auth_header(usuario_legado))
 
     assert resposta.status_code == 200
     corpo = resposta.json()
@@ -30,7 +42,7 @@ def test_listar_nao_traz_inativo_por_padrao(client, db_session):
     assert corpo[0]["numero"] == "11"
 
 
-def test_listar_todos_com_apenas_ativos_false(client, db_session):
+def test_listar_todos_com_apenas_ativos_false(client, db_session, usuario_legado):
     db_session.add_all(
         [
             Quarto(numero="11", leito=4, ativo=True),
@@ -39,21 +51,25 @@ def test_listar_todos_com_apenas_ativos_false(client, db_session):
     )
     db_session.commit()
 
-    resposta = client.get("/api/quartos", params={"apenas_ativos": False})
+    resposta = client.get(
+        "/api/quartos", params={"apenas_ativos": False}, headers=_auth_header(usuario_legado)
+    )
 
     assert resposta.status_code == 200
     assert len(resposta.json()) == 2
 
 
-def test_criar_e_buscar_quarto(client):
+def test_criar_e_buscar_quarto(client, usuario_legado):
+    headers = _auth_header(usuario_legado)
     resposta = client.post(
         "/api/quartos",
         json={"descricao": "Cadeirante", "numero": "16", "leito": 2},
+        headers=headers,
     )
     assert resposta.status_code == 201
     quarto_id = resposta.json()["id"]
 
-    resposta = client.get(f"/api/quartos/{quarto_id}")
+    resposta = client.get(f"/api/quartos/{quarto_id}", headers=headers)
     assert resposta.status_code == 200
     corpo = resposta.json()
     assert corpo["numero"] == "16"
@@ -61,13 +77,15 @@ def test_criar_e_buscar_quarto(client):
     assert corpo["ativo"] is True
 
 
-def test_atualizar_quarto(client):
-    resposta = client.post("/api/quartos", json={"numero": "20", "leito": 2})
+def test_atualizar_quarto(client, usuario_legado):
+    headers = _auth_header(usuario_legado)
+    resposta = client.post("/api/quartos", json={"numero": "20", "leito": 2}, headers=headers)
     quarto_id = resposta.json()["id"]
 
     resposta = client.put(
         f"/api/quartos/{quarto_id}",
         json={"descricao": "Reformado", "numero": "20", "leito": 3},
+        headers=headers,
     )
 
     assert resposta.status_code == 200
@@ -75,31 +93,38 @@ def test_atualizar_quarto(client):
     assert resposta.json()["descricao"] == "Reformado"
 
 
-def test_inativar_quarto(client):
-    resposta = client.post("/api/quartos", json={"numero": "21", "leito": 2})
+def test_inativar_quarto(client, usuario_legado):
+    headers = _auth_header(usuario_legado)
+    resposta = client.post("/api/quartos", json={"numero": "21", "leito": 2}, headers=headers)
     quarto_id = resposta.json()["id"]
 
-    resposta = client.delete(f"/api/quartos/{quarto_id}")
+    resposta = client.delete(f"/api/quartos/{quarto_id}", headers=headers)
     assert resposta.status_code == 204
 
-    resposta = client.get("/api/quartos")
+    resposta = client.get("/api/quartos", headers=headers)
     assert resposta.json() == []
 
 
-def test_buscar_quarto_inexistente(client):
-    resposta = client.get("/api/quartos/999")
+def test_buscar_quarto_inexistente(client, usuario_legado):
+    resposta = client.get("/api/quartos/999", headers=_auth_header(usuario_legado))
 
     assert resposta.status_code == 404
 
 
-def test_atualizar_quarto_inexistente(client):
-    resposta = client.put("/api/quartos/999", json={"numero": "1", "leito": 1})
+def test_atualizar_quarto_inexistente(client, usuario_legado):
+    resposta = client.put(
+        "/api/quartos/999", json={"numero": "1", "leito": 1}, headers=_auth_header(usuario_legado)
+    )
 
     assert resposta.status_code == 404
 
 
-def test_criar_quarto_rejeita_leito_nao_numerico(client):
-    resposta = client.post("/api/quartos", json={"numero": "22", "leito": "2 leitos"})
+def test_criar_quarto_rejeita_leito_nao_numerico(client, usuario_legado):
+    resposta = client.post(
+        "/api/quartos",
+        json={"numero": "22", "leito": "2 leitos"},
+        headers=_auth_header(usuario_legado),
+    )
 
     assert resposta.status_code == 422
 
@@ -155,7 +180,7 @@ def test_listar_ocupacao(client, db_session):
     )
     db_session.commit()
 
-    resposta = client.get("/api/quartos/ocupacao")
+    resposta = client.get("/api/quartos/ocupacao", headers=_auth_header(usuario))
 
     assert resposta.status_code == 200
     corpo = {q["numero"]: q for q in resposta.json()}
