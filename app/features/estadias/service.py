@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
@@ -15,6 +16,7 @@ from app.features.estadias.schemas import (
     EstadiaCreate,
     EstadiaUpdate,
 )
+from app.features.hospitais.models import Hospital
 from app.features.quartos.models import Quarto
 
 # Rótulo em português de cada campo que entra no diff de "Alteração" do
@@ -61,6 +63,23 @@ def _numero_quarto(db: Session, id_quarto: int | None) -> str | None:
     return quarto.numero if quarto else None
 
 
+def _nome_hospital(db: Session, id_hospital: int | None) -> str | None:
+    """Mesmo caso de `_numero_quarto`, pro campo Hospital."""
+    if id_hospital is None:
+        return None
+    hospital = db.get(Hospital, id_hospital)
+    return hospital.nome if hospital else None
+
+
+# Campos de `_ROTULOS_HISTORICO` que são chave estrangeira (id de outra
+# tabela) — precisam passar pelo tradutor antes de entrar no diff, senão o
+# histórico mostra o id do banco em vez do valor que o front exibe.
+_TRADUTORES_FK: dict[str, Callable[[Session, int | None], str | None]] = {
+    "id_quarto": _numero_quarto,
+    "id_hospital": _nome_hospital,
+}
+
+
 def _descricao_alteracao(db: Session, estadia: Estadia, dados: EstadiaUpdate) -> str | None:
     """Compara os campos relevantes ANTES de `atualizar` sobrescrevê-los —
     retorna None quando nada realmente mudou, pra não poluir o histórico
@@ -75,9 +94,10 @@ def _descricao_alteracao(db: Session, estadia: Estadia, dados: EstadiaUpdate) ->
         # em vez de "Finalizada".
         valor_novo = novos_valores.get(campo)
         valor_novo = valor_novo.value if hasattr(valor_novo, "value") else valor_novo
-        if campo == "id_quarto":
-            valor_antigo = _numero_quarto(db, valor_antigo)
-            valor_novo = _numero_quarto(db, valor_novo)
+        tradutor = _TRADUTORES_FK.get(campo)
+        if tradutor:
+            valor_antigo = tradutor(db, valor_antigo)
+            valor_novo = tradutor(db, valor_novo)
         if valor_antigo != valor_novo:
             mudancas.append(f"{rotulo}: {valor_antigo or '-'} -> {valor_novo or '-'}")
     return "; ".join(mudancas) if mudancas else None
