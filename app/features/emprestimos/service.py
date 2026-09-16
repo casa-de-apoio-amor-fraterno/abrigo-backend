@@ -300,31 +300,172 @@ class ContratoDadosIncompletos(Exception):
 
 TAMANHO_MAXIMO_ASSINATURA_BYTES = 2 * 1024 * 1024
 
-# Rascunho genérico — feature nova, sem termo equivalente no legado pra
-# migrar (ver emprestimo.legacy.md). Ainda não passou por revisão jurídica;
-# ajustar o texto aqui conforme a entidade definir o modelo final.
-_CLAUSULA_PREAMBULO = (
-    "Pelo presente termo, a {entidade}, por meio de {usuario}, empresta a "
-    "{pessoa} o(s) material(is) abaixo relacionado(s), mediante as condições "
-    "estabelecidas neste documento."
-)
-_CLAUSULA_RESPONSABILIDADE = (
-    "Ao assinar este termo, {pessoa} se compromete a: (i) utilizar o(s) "
-    "material(is) emprestado(s) com zelo e para a finalidade a que se "
-    "destina(m); (ii) devolvê-lo(s) até a(s) data(s) prevista(s) acima, ou "
-    "solicitar renovação junto à {entidade} antes do vencimento; (iii) arcar "
-    "com o reparo ou a reposição em caso de dano, perda ou extravio do "
-    "material, ressalvado o desgaste natural pelo uso; (iv) comunicar "
-    "imediatamente qualquer problema com o material emprestado."
+# Texto do modelo real cedido pela CAAF (2026-09-16, "Contrato de Comodato
+# de Bem Móvel - Empréstimo Solidário") — substitui o rascunho genérico
+# anterior (ver git history / emprestimo.legacy.md). Cláusulas fixas
+# (endereço/CNPJ da entidade, tabela de taxas, foro etc.) reproduzidas
+# literalmente do modelo; só os campos abaixo são preenchidos por
+# empréstimo: beneficiário, responsável (CPF/endereço/telefone), item(ns)
+# emprestado(s) e prazo de vigência.
+_RODAPE_CONTRATO = [
+    "Abrigo: R. Dom Pedro II, 140, Cidade Nova - Porto União/SC. Tel.: (42) 3522-7765",
+    "Bazar: R. Frei Rogério, 142, Centro - Porto União/SC. Tel.: (42) 3522-0322",
+    "e-mail: contato@casaamorfraterno.org",
+]
+
+_TEXTO_INSTITUCIONAL = (
+    "A Associação Família Zalewski - Casa de Apoio Amor Fraterno (CAAF) é uma instituição "
+    "beneficente, sem fins lucrativos, mantida por doações e trabalho voluntário, que tem "
+    "como finalidade oferecer acolhimento, hospedagem, alimentação e assistência a pacientes "
+    "em tratamento de saúde e seus acompanhantes. Como forma de ampliar esse atendimento, a "
+    "instituição mantém o Projeto Empréstimo Solidário, que disponibiliza gratuitamente "
+    "equipamentos de apoio e recuperação, como cadeiras de rodas, andadores, muletas, camas "
+    "hospitalares, bengalas e outros dispositivos auxiliares, contribuindo para a recuperação, "
+    "mobilidade e qualidade de vida dos beneficiários que não possuem condições de adquiri-los."
 )
 
+_TEXTO_PARTES = (
+    "Por este instrumento particular, de um lado Associação Família Zalewski - Casa de Apoio "
+    "Amor Fraterno, com sede na cidade de Porto União, Estado de Santa Catarina, à Rua Dom "
+    "Pedro II, nº 140, Cidade Nova, inscrita no CNPJ sob o nº 10.201.460/0001-31, neste ato "
+    "representada por sua Presidente Laurete Dub Pinto Conte, doravante denominada simplesmente "
+    "COMODANTE, e, de outro, Responsável: {nome} CPF: {cpf} Endereço {endereco} Telefone "
+    "{telefone} Doravante denominado simplesmente de COMODATÁRIO, tem entre si como justo e "
+    "acordado o que segue que se obrigam a cumprir por si e seus sucessores."
+)
 
-def _linha_item_contrato(db: Session, item: EmprestimoItem) -> str:
-    material = db.get(Material, item.id_material)
-    descricao_material = material.descricao if material else f"material #{item.id_material}"
-    data_emprestimo = item.data_emprestimo.strftime("%d/%m/%Y") if item.data_emprestimo else "-"
-    data_devolucao = item.data_devolucao.strftime("%d/%m/%Y") if item.data_devolucao else "-"
-    return f"- {descricao_material} (empréstimo: {data_emprestimo}, devolução prevista: {data_devolucao})"
+_CLAUSULA_1 = (
+    "1. A Casa de Apoio Amor Fraterno (CAAF), na qualidade de legítima proprietária de {itens}, "
+    "empresta ao comodatário gratuitamente, a título de comodato, em perfeito funcionamento, "
+    "por meio do Projeto Empréstimo Solidário."
+)
+
+_CLAUSULA_2 = (
+    "2. O PRAZO DE VIGÊNCIA deste contrato será de {dias} DIAS, com início em {inicio} e "
+    "término em {termino}, data em que o Responsável pelo Empréstimo deverá devolver o bem "
+    "acima especificado nas mesmas condições em que recebeu, ou entrar em contato, solicitando "
+    "a prorrogação do prazo. O prazo máximo de empréstimo é de 6 (seis) meses."
+)
+
+_CLAUSULA_3 = (
+    "3. Só poderá ser realizada a renovação do Empréstimo se este estiver dentro do prazo de "
+    "vigência, ou seja, caso o contrato esteja vencido, não será realizada a renovação do "
+    "equipamento."
+)
+
+_CLAUSULA_4 = (
+    "4. O RESPONSÁVEL pelo Empréstimo compromete-se a zelar pela conservação do equipamento "
+    "recebido em comodato, utilizando-o de forma adequada e exclusivamente para sua finalidade. "
+    "O equipamento será entregue após vistoria realizada pela CAAF, sendo registrado seu estado "
+    "de conservação no momento do empréstimo. A devolução do equipamento ficará sujeita à nova "
+    "vistoria da CAAF, que verificará suas condições de conservação e funcionamento na entrega "
+    "do item, levando em consideração o desgaste de uso normal."
+)
+
+_TEXTO_DANOS = (
+    "Por se tratar de equipamentos adquiridos e mantidos por meio de doações, o beneficiário "
+    "compromete-se a utilizá-los com zelo e responsabilidade, preservando seu estado de "
+    "conservação para que a instituição possa continuar atendendo outros usuários. O empréstimo "
+    "é realizado GRATUITAMENTE, exceto se houver avarias. Caso o equipamento apresente danos "
+    "decorrentes de mau uso, negligência, imprudência ou falta de conservação, o Responsável "
+    "pelo Empréstimo deverá, a seu critério: I - providenciar o conserto do equipamento por "
+    "profissional capacitado, devolvendo-o em perfeitas condições de uso e funcionamento, "
+    "mediante aprovação da Casa de Apoio Amor Fraterno; ou II - efetuar o pagamento do valor "
+    "correspondente ao reparo ou reposição do equipamento, conforme apresentado pela CAAF."
+)
+
+_CLAUSULA_5_INTRO = "5. Seguem os valores de taxa de cada item, caso haja constatação de avaria do equipamento:"
+
+_TABELA_TAXAS = [
+    ("Bota Ortopédica/Imobilizador/Colar/Colete/faixa", "R$ 40,00"),
+    ("Colchão Pneumático", "R$ 50,00"),
+    ("Muletas/Bengalas", "R$ 50,00"),
+    ("Andador", "R$ 50,00"),
+    ("Cadeira de Rodas", "R$ 150,00"),
+    ("Cadeira de Banho", "R$ 130,00"),
+    ("Cama Hospitalar", "R$ 400,00"),
+    ("Concentrador de Oxigênio", "R$ 1000,00"),
+    ("Cilindro c/ suporte", "R$ 500,00"),
+]
+
+_TEXTO_COLCHAO = (
+    "(No processo de devolução, o colchão pneumático deverá permanecer conectado à tomada por "
+    "24 horas para verificação de possíveis furos, vazamentos ou outros danos. Somente após "
+    "essa inspeção e confirmação de que o equipamento está em condições adequadas será "
+    "realizada a baixa no sistema.)"
+)
+
+_CLAUSULA_6 = (
+    "6. Para os itens Concentrador de Oxigênio e Cilindro c/ suporte, a depender do dano no "
+    "equipamento, poderá haver pena de realizar o pagamento do valor total atualizado do bem."
+)
+_CLAUSULA_7 = "7. O cilindro de oxigênio deve ser devolvido recarregado diretamente na CAAF."
+_CLAUSULA_8 = (
+    "8. O Responsável pelo Empréstimo deverá devolver o bem devidamente higienizado, caso "
+    "contrário deverá pagar a taxa de R$ 40,00 para higienização do equipamento."
+)
+_CLAUSULA_9 = (
+    "9. É vedado ao Responsável pelo Empréstimo sub-comodatar ou locar o equipamento emprestado "
+    "a terceiros, bem como ceder ou transferir o presente contrato sem prévia autorização, por "
+    "escrito, da Casa de Apoio Amor Fraterno."
+)
+_CLAUSULA_10 = (
+    "10. As despesas com o transporte do bem da sede da Casa de Apoio até a residência do "
+    "beneficiário serão de inteira responsabilidade do Responsável pelo Empréstimo, tanto na "
+    "retirada quanto na devolução."
+)
+_CLAUSULA_11 = (
+    "11. Caso a CAAF necessite realizar a busca de qualquer equipamento emprestado, será "
+    "cobrada taxa de transporte no valor de R$ 150,00, independentemente do tipo de "
+    "equipamento. O valor destina-se a cobrir custos de combustível, veículo, motorista e "
+    "demais despesas relacionadas ao deslocamento."
+)
+_CLAUSULA_12 = (
+    "12. O presente instrumento será considerado rescindido de pleno direito em caso de "
+    "infração, por parte do Responsável pelo Empréstimo, de qualquer cláusula acordada, "
+    "assegurado à Casa de Apoio Amor Fraterno o direito de retirar, de onde quer que esteja, o "
+    "bem ora cedido em comodato."
+)
+_CLAUSULA_13 = (
+    "13. As partes elegem o foro da Comarca de Porto União, com exclusão de qualquer outro, por "
+    "mais privilegiado que seja, para dirimir eventuais dúvidas ou litígios decorrentes deste "
+    "contrato."
+)
+
+_TEXTO_ENCERRAMENTO = "E assim, por estarem justas e contratadas, as partes assinam o presente em duas vias de igual teor."
+_TEXTO_DECLARACAO = (
+    "Declaro que recebi o equipamento descrito neste contrato em perfeitas condições de uso, "
+    "funcionamento e conservação, comprometendo-me a devolvê-lo nas mesmas condições."
+)
+
+_MESES_PT = {
+    1: "janeiro", 2: "fevereiro", 3: "março", 4: "abril", 5: "maio", 6: "junho",
+    7: "julho", 8: "agosto", 9: "setembro", 10: "outubro", 11: "novembro", 12: "dezembro",
+}
+
+
+def _data_por_extenso(data: date) -> str:
+    return f"{data.day} de {_MESES_PT[data.month]} de {data.year}"
+
+
+def _texto_itens_contrato(db: Session, itens: list[EmprestimoItem]) -> str:
+    descricoes = []
+    for item in itens:
+        material = db.get(Material, item.id_material)
+        nome = material.descricao.upper() if material else f"MATERIAL #{item.id_material}"
+        codigo = material.codigo_identificacao if material else None
+        descricoes.append(f"01 (UM) {nome} Nº {codigo}" if codigo else f"01 (UM) {nome}")
+    if not descricoes:
+        return "bem(ns) a ser(em) especificado(s)"
+    return " e ".join(descricoes)
+
+
+def _prazo_vigencia_contrato(itens: list[EmprestimoItem]) -> tuple[date, date, int]:
+    datas_inicio = [item.data_emprestimo for item in itens if item.data_emprestimo]
+    datas_termino = [item.data_devolucao for item in itens if item.data_devolucao]
+    inicio = min(datas_inicio) if datas_inicio else date.today()
+    termino = max(datas_termino) if datas_termino else inicio
+    return inicio, termino, (termino - inicio).days
 
 
 def _gerar_pdf_contrato(
@@ -336,24 +477,50 @@ def _gerar_pdf_contrato(
     assinatura_png: bytes,
 ) -> bytes:
     identificador = emprestimo.numero_contrato or f"#{emprestimo.id}"
-    pdf = DocumentoPDF(titulo=f"Termo de Responsabilidade - Empréstimo {identificador}")
+    inicio, termino, dias = _prazo_vigencia_contrato(itens)
 
-    pessoa_descricao = pessoa.nome + (f", CPF {pessoa.cpf}" if pessoa.cpf else "")
+    pdf = DocumentoPDF(rodape=_RODAPE_CONTRATO)
+    pdf.titulo_documento(f"CONTRATO DE COMODATO DE BEM MÓVEL EMPRÉSTIMO SOLIDÁRIO\n{identificador}")
+
+    pdf.paragrafo(f"IDENTIFICAÇÃO DO(A) BENEFICIÁRIO: {pessoa.nome}.")
+    pdf.paragrafo(_TEXTO_INSTITUCIONAL)
     pdf.paragrafo(
-        _CLAUSULA_PREAMBULO.format(
-            entidade="Casa de Apoio Amor Fraterno", usuario=usuario.nome, pessoa=pessoa_descricao
+        _TEXTO_PARTES.format(
+            nome=pessoa.nome,
+            cpf=pessoa.cpf or "-",
+            endereco=pessoa.endereco or "-",
+            telefone=pessoa.telefone_principal or "-",
         )
     )
 
-    linhas_itens = "\n".join(_linha_item_contrato(db, item) for item in itens) or "- (nenhum item registrado)"
-    pdf.paragrafo(linhas_itens)
-
+    pdf.paragrafo(_CLAUSULA_1.format(itens=_texto_itens_contrato(db, itens)))
     pdf.paragrafo(
-        _CLAUSULA_RESPONSABILIDADE.format(entidade="Casa de Apoio Amor Fraterno", pessoa=pessoa.nome)
+        _CLAUSULA_2.format(
+            dias=dias, inicio=inicio.strftime("%d/%m/%Y"), termino=termino.strftime("%d/%m/%Y")
+        )
     )
+    pdf.paragrafo(_CLAUSULA_3)
+    pdf.paragrafo(_CLAUSULA_4)
+    pdf.paragrafo(_TEXTO_DANOS)
+    pdf.paragrafo(_CLAUSULA_5_INTRO)
+    pdf.tabela(["ITEM/EQUIPAMENTO", "VALOR"], [list(linha) for linha in _TABELA_TAXAS])
+    pdf.paragrafo(_TEXTO_COLCHAO)
+    pdf.paragrafo(_CLAUSULA_6)
+    pdf.paragrafo(_CLAUSULA_7)
+    pdf.paragrafo(_CLAUSULA_8)
+    pdf.paragrafo(_CLAUSULA_9)
+    pdf.paragrafo(_CLAUSULA_10)
+    pdf.paragrafo(_CLAUSULA_11)
+    pdf.paragrafo(_CLAUSULA_12)
+    pdf.paragrafo(_CLAUSULA_13)
+    pdf.paragrafo(_TEXTO_ENCERRAMENTO)
+    pdf.paragrafo(_TEXTO_DECLARACAO)
+    pdf.paragrafo(f"Porto União, {_data_por_extenso(date.today())}.")
 
-    pdf.campo_assinatura(f"Assinatura de {pessoa.nome}", imagem_assinatura=assinatura_png)
-    pdf.paragrafo(f"Registrado por {usuario.nome} em {date.today().strftime('%d/%m/%Y')}.")
+    pdf.campo_assinatura(f"{pessoa.nome} - Responsável pelo Empréstimo", imagem_assinatura=assinatura_png)
+    pdf.assinaturas_lado_a_lado(
+        [("Laurete Dub Pinto Conte", "Presidente"), ("Cinthia Keiser", "Gerente Geral")]
+    )
 
     return pdf.gerar_bytes()
 

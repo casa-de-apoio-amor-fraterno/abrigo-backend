@@ -41,7 +41,8 @@ def gerar_pdf(dados: ContratoDemoRequest) -> Response:
         # base64 válido só em ASCII, mas padding/conteúdo incorretos.
         raise HTTPException(status_code=400, detail="Assinatura em base64 inválida") from exc
 
-    pdf = DocumentoPDF(titulo=f"Contrato (protótipo) - {dados.nome_pessoa}")
+    pdf = DocumentoPDF()
+    pdf.titulo_documento(f"Contrato (protótipo) - {dados.nome_pessoa}")
     pdf.paragrafo(dados.texto_contrato)
     pdf.campo_assinatura(f"Assinatura de {dados.nome_pessoa}", imagem_assinatura)
 

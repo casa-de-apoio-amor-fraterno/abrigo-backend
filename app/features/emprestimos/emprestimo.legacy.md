@@ -131,9 +131,17 @@ papel fora do sistema — `untFrmRelatorioEmprestimo` é uma tela de
 listagem/filtro, não um documento assinável).
 
 Decisões confirmadas com o usuário (2026-09-14):
-- **Texto das cláusulas é um rascunho genérico** (`service._CLAUSULA_*`),
-  não um termo já usado pela entidade — não passou por revisão jurídica,
-  ajustar conforme a entidade definir o modelo final.
+- **Texto das cláusulas** (`service.py`, constantes `_CLAUSULA_*`/`_TEXTO_*`)
+  reproduz literalmente o modelo real cedido pela CAAF em 2026-09-16
+  ("Contrato de Comodato de Bem Móvel Empréstimo Solidário", PDF de
+  exemplo nº 391/2026) — substituiu o rascunho genérico anterior. Campos
+  dinâmicos: beneficiário/responsável (nome, CPF, endereço, telefone —
+  `Pessoa`), item(ns) emprestado(s) (`Material.descricao` +
+  `codigo_identificacao`) e prazo de vigência (min/max de
+  `EmprestimoItem.data_emprestimo`/`data_devolucao` entre os itens do
+  empréstimo). Tabela de taxas (cláusula 5), endereço/CNPJ da entidade,
+  rodapé e demais cláusulas são fixos, copiados do modelo. Logo real em
+  `app/shared/assets/logo-caaf.png`.
 - **Um contrato por empréstimo** (`EmprestimoContrato.id_emprestimo` é
   `unique`) — assina uma vez; renovação/alteração de item não gera novo
   termo. Tentar assinar de novo retorna 409.

@@ -8,17 +8,26 @@ em qualquer SO/ambiente de deploy).
 
 Uso típico:
 
-    pdf = DocumentoPDF(titulo="Contrato de Estadia nº 42")
+    pdf = DocumentoPDF()
+    pdf.titulo_documento("Contrato de Estadia nº 42")
     pdf.paragrafo("Texto do contrato, justificado automaticamente...")
     pdf.campo_assinatura("Assinatura do responsável")
     conteudo: bytes = pdf.gerar_bytes()
 """
 
 import io
+from pathlib import Path
 
 from fpdf import FPDF
 
-NOME_ENTIDADE = "Casa de Apoio Amor Fraterno"
+NOME_ENTIDADE = "CASA DE APOIO AMOR FRATERNO"
+NOME_ENTIDADE_TITULO = "Casa de Apoio Amor Fraterno"
+SUBTITULO_ENTIDADE = "Associação Família Zalewski"
+
+# Logo real da entidade (recebido 2026-09-16, ver Contrato modelo cedido
+# pela CAAF) — vive dentro do pacote da aplicação (não em `C:\repos\caaf\`,
+# que é só a raiz do workspace local) pra ser embarcado no deploy.
+_CAMINHO_LOGO = Path(__file__).parent / "assets" / "logo-caaf.png"
 
 # A fonte core (Helvetica) só suporta Latin-1 — cobre acentuação do
 # português normalmente (á, ã, ç, º...), mas não pontuação "tipográfica"
@@ -47,27 +56,69 @@ def _texto_seguro(texto: str) -> str:
 
 
 class DocumentoPDF(FPDF):
-    def __init__(self, titulo: str) -> None:
+    def __init__(self, rodape: list[str] | None = None) -> None:
         super().__init__(format="A4")
-        self._titulo = titulo
+        self._rodape = rodape
         self.set_auto_page_break(auto=True, margin=25)
         self.add_page()
 
     def header(self) -> None:
-        self.set_font("Helvetica", "B", 14)
-        self.cell(0, 8, _texto_seguro(NOME_ENTIDADE), align="C", new_x="LMARGIN", new_y="NEXT")
-        self.set_font("Helvetica", "", 11)
-        self.cell(0, 6, _texto_seguro(self._titulo), align="C", new_x="LMARGIN", new_y="NEXT")
-        self.ln(6)
+        # Timbre da entidade (logo + nome), repetido em toda página — o
+        # título do documento em si é impresso uma única vez, ver
+        # `titulo_documento`, porque no modelo real cedido pela CAAF ele só
+        # aparece no topo da primeira página, não em todas.
+        y_inicial = self.t_margin
+        if _CAMINHO_LOGO.exists():
+            self.image(str(_CAMINHO_LOGO), x=self.l_margin, y=y_inicial, h=18)
+
+        self.set_xy(self.l_margin + 22, y_inicial + 1)
+        self.set_font("Helvetica", "B", 13)
+        self.cell(self.epw - 22, 6, _texto_seguro(NOME_ENTIDADE), align="C")
+        self.set_xy(self.l_margin + 22, y_inicial + 8)
+        self.set_font("Helvetica", "", 10)
+        self.cell(self.epw - 22, 6, _texto_seguro(SUBTITULO_ENTIDADE), align="C")
+
+        y_linha = y_inicial + 20
+        self.line(self.l_margin, y_linha, self.w - self.r_margin, y_linha)
+        self.set_y(y_linha + 4)
 
     def footer(self) -> None:
-        self.set_y(-15)
-        self.set_font("Helvetica", "", 8)
-        self.cell(0, 10, f"Página {self.page_no()}", align="C")
+        self.set_y(-20)
+        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
+        self.set_y(-17)
+        self.set_font("Helvetica", "", 7)
+        linhas = self._rodape or [f"Página {self.page_no()}"]
+        for linha in linhas:
+            self.cell(0, 3.5, _texto_seguro(linha), align="C", new_x="LMARGIN", new_y="NEXT")
+
+    def titulo_documento(self, texto: str) -> None:
+        """Título impresso uma única vez, no ponto em que é chamado (em
+        geral logo após criar o documento) — diferente do timbre do
+        cabeçalho, que se repete em toda página."""
+        self.set_font("Helvetica", "B", 12)
+        self.multi_cell(0, 6, _texto_seguro(texto), align="C")
+        self.ln(3)
 
     def paragrafo(self, texto: str) -> None:
         self.set_font("Helvetica", "", 11)
         self.multi_cell(0, 6, _texto_seguro(texto), align="J")
+        self.ln(3)
+
+    def tabela(self, cabecalho: list[str], linhas: list[list[str]]) -> None:
+        largura_total = self.epw
+        larguras = [largura_total * 0.7, largura_total * 0.3]
+
+        self.set_font("Helvetica", "B", 10)
+        self.set_fill_color(230, 230, 230)
+        for texto, largura in zip(cabecalho, larguras, strict=True):
+            self.cell(largura, 7, _texto_seguro(texto), border=1, align="C", fill=True)
+        self.ln()
+
+        self.set_font("Helvetica", "", 10)
+        for linha in linhas:
+            for texto, largura in zip(linha, larguras, strict=True):
+                self.cell(largura, 7, _texto_seguro(texto), border=1, align="C")
+            self.ln()
         self.ln(3)
 
     def campo_assinatura(self, rotulo: str, imagem_assinatura: bytes | None = None) -> None:
@@ -92,6 +143,32 @@ class DocumentoPDF(FPDF):
         self.ln(2)
         self.set_font("Helvetica", "", 10)
         self.cell(0, 6, _texto_seguro(rotulo), align="C", new_x="LMARGIN", new_y="NEXT")
+
+    def assinaturas_lado_a_lado(self, assinantes: list[tuple[str, str]]) -> None:
+        """Duas (ou mais) assinaturas em colunas lado a lado, sem imagem —
+        pra assinatura manual no papel impresso (representantes da própria
+        entidade, ex.: presidente e gerente geral)."""
+        largura_coluna = self.epw / len(assinantes)
+
+        self.ln(15)
+        y_linha = self.get_y()
+        for indice in range(len(assinantes)):
+            x_inicial = self.l_margin + indice * largura_coluna + largura_coluna * 0.15
+            self.line(x_inicial, y_linha, x_inicial + largura_coluna * 0.7, y_linha)
+        self.set_y(y_linha + 2)
+
+        self.set_font("Helvetica", "B", 10)
+        for nome, _ in assinantes:
+            self.cell(largura_coluna, 5, _texto_seguro(nome), align="C")
+        self.ln()
+
+        self.set_font("Helvetica", "", 9)
+        for _, cargo in assinantes:
+            self.cell(largura_coluna, 5, _texto_seguro(cargo), align="C")
+        self.ln()
+        for _ in assinantes:
+            self.cell(largura_coluna, 5, _texto_seguro(NOME_ENTIDADE_TITULO), align="C")
+        self.ln()
 
     def gerar_bytes(self) -> bytes:
         return bytes(self.output())
