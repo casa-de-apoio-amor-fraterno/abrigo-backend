@@ -142,10 +142,13 @@ class DocumentoPDF(FPDF):
         x_inicial = (self.w - largura_linha) / 2
 
         if imagem_assinatura is not None:
-            altura_imagem = 18
-            self.ln(4)
+            # Mais espaço que o campo em branco (assinatura feita na tela
+            # do celular/tablet — ver `shared/ui/assinatura-canvas` — fica
+            # apertada com pouca folga acima/abaixo do traço).
+            altura_imagem = 26
+            self.ln(8)
             self.image(io.BytesIO(imagem_assinatura), x=x_inicial, w=largura_linha, h=altura_imagem)
-            self.ln(1)
+            self.ln(3)
         else:
             self.ln(15)
 
