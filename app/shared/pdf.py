@@ -28,6 +28,8 @@ SUBTITULO_ENTIDADE = "Associação Família Zalewski"
 # pela CAAF) — vive dentro do pacote da aplicação (não em `C:\repos\caaf\`,
 # que é só a raiz do workspace local) pra ser embarcado no deploy.
 _CAMINHO_LOGO = Path(__file__).parent / "assets" / "logo-caaf.png"
+_ALTURA_LOGO = 16
+_LARGURA_LOGO = 32  # reserva à esquerda do cabeçalho — cobre a largura real da imagem (~27mm a 16mm de altura) com folga
 
 # A fonte core (Helvetica) só suporta Latin-1 — cobre acentuação do
 # português normalmente (á, ã, ç, º...), mas não pontuação "tipográfica"
@@ -67,16 +69,22 @@ class DocumentoPDF(FPDF):
         # título do documento em si é impresso uma única vez, ver
         # `titulo_documento`, porque no modelo real cedido pela CAAF ele só
         # aparece no topo da primeira página, não em todas.
+        # Logo (só o ícone, sem o nome por extenso embutido na imagem —
+        # ver `assets/logo-caaf.png`) reservando uma faixa própria à
+        # esquerda; o nome da entidade é sempre desenhado à parte, a partir
+        # de `_LARGURA_LOGO`, pra nunca sobrepor a imagem.
         y_inicial = self.t_margin
         if _CAMINHO_LOGO.exists():
-            self.image(str(_CAMINHO_LOGO), x=self.l_margin, y=y_inicial, h=18)
+            self.image(str(_CAMINHO_LOGO), x=self.l_margin, y=y_inicial, h=_ALTURA_LOGO)
 
-        self.set_xy(self.l_margin + 22, y_inicial + 1)
+        x_texto = self.l_margin + _LARGURA_LOGO
+        largura_texto = self.epw - _LARGURA_LOGO
+        self.set_xy(x_texto, y_inicial + 1)
         self.set_font("Helvetica", "B", 13)
-        self.cell(self.epw - 22, 6, _texto_seguro(NOME_ENTIDADE), align="C")
-        self.set_xy(self.l_margin + 22, y_inicial + 8)
+        self.cell(largura_texto, 6, _texto_seguro(NOME_ENTIDADE), align="C")
+        self.set_xy(x_texto, y_inicial + 8)
         self.set_font("Helvetica", "", 10)
-        self.cell(self.epw - 22, 6, _texto_seguro(SUBTITULO_ENTIDADE), align="C")
+        self.cell(largura_texto, 6, _texto_seguro(SUBTITULO_ENTIDADE), align="C")
 
         y_linha = y_inicial + 20
         self.line(self.l_margin, y_linha, self.w - self.r_margin, y_linha)
@@ -100,8 +108,11 @@ class DocumentoPDF(FPDF):
         self.ln(3)
 
     def paragrafo(self, texto: str) -> None:
+        """Parágrafo justificado. Suporta negrito em **trecho** (sintaxe
+        markdown do fpdf2) pra destacar termos-chave do contrato (ex.:
+        `**COMODANTE**`, `**30 DIAS**`) igual ao modelo real da CAAF."""
         self.set_font("Helvetica", "", 11)
-        self.multi_cell(0, 6, _texto_seguro(texto), align="J")
+        self.multi_cell(0, 6, _texto_seguro(texto), align="J", markdown=True)
         self.ln(3)
 
     def tabela(self, cabecalho: list[str], linhas: list[list[str]]) -> None:

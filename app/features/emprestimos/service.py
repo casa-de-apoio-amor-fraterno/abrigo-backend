@@ -329,37 +329,37 @@ _TEXTO_PARTES = (
     "Amor Fraterno, com sede na cidade de Porto União, Estado de Santa Catarina, à Rua Dom "
     "Pedro II, nº 140, Cidade Nova, inscrita no CNPJ sob o nº 10.201.460/0001-31, neste ato "
     "representada por sua Presidente Laurete Dub Pinto Conte, doravante denominada simplesmente "
-    "COMODANTE, e, de outro, Responsável: {nome} CPF: {cpf} Endereço {endereco} Telefone "
-    "{telefone} Doravante denominado simplesmente de COMODATÁRIO, tem entre si como justo e "
+    "COMODANTE, e, de outro, **Responsável: {nome} CPF: {cpf} Endereço {endereco} Telefone "
+    "{telefone}** Doravante denominado simplesmente de COMODATÁRIO, tem entre si como justo e "
     "acordado o que segue que se obrigam a cumprir por si e seus sucessores."
 )
 
 _CLAUSULA_1 = (
-    "1. A Casa de Apoio Amor Fraterno (CAAF), na qualidade de legítima proprietária de {itens}, "
-    "empresta ao comodatário gratuitamente, a título de comodato, em perfeito funcionamento, "
-    "por meio do Projeto Empréstimo Solidário."
+    "1. A Casa de Apoio Amor Fraterno (CAAF), na qualidade de legítima proprietária **de "
+    "{itens}**, empresta ao comodatário gratuitamente, a título de comodato, em perfeito "
+    "funcionamento, por meio do Projeto Empréstimo Solidário."
 )
 
 _CLAUSULA_2 = (
-    "2. O PRAZO DE VIGÊNCIA deste contrato será de {dias} DIAS, com início em {inicio} e "
-    "término em {termino}, data em que o Responsável pelo Empréstimo deverá devolver o bem "
-    "acima especificado nas mesmas condições em que recebeu, ou entrar em contato, solicitando "
-    "a prorrogação do prazo. O prazo máximo de empréstimo é de 6 (seis) meses."
+    "2. O PRAZO DE VIGÊNCIA deste contrato será de **{dias} DIAS**, com início em **{inicio}** "
+    "e término em **{termino}**, data em que o __Responsável pelo Empréstimo__ deverá devolver o "
+    "bem acima especificado nas mesmas condições em que recebeu, ou entrar em contato, "
+    "solicitando a prorrogação do prazo. **O prazo máximo de empréstimo é de 6 (seis) meses.**"
 )
 
 _CLAUSULA_3 = (
-    "3. Só poderá ser realizada a renovação do Empréstimo se este estiver dentro do prazo de "
+    "**3. Só poderá ser realizada a renovação do Empréstimo se este estiver dentro do prazo de "
     "vigência, ou seja, caso o contrato esteja vencido, não será realizada a renovação do "
-    "equipamento."
+    "equipamento.**"
 )
 
 _CLAUSULA_4 = (
-    "4. O RESPONSÁVEL pelo Empréstimo compromete-se a zelar pela conservação do equipamento "
-    "recebido em comodato, utilizando-o de forma adequada e exclusivamente para sua finalidade. "
-    "O equipamento será entregue após vistoria realizada pela CAAF, sendo registrado seu estado "
-    "de conservação no momento do empréstimo. A devolução do equipamento ficará sujeita à nova "
-    "vistoria da CAAF, que verificará suas condições de conservação e funcionamento na entrega "
-    "do item, levando em consideração o desgaste de uso normal."
+    "4. O **RESPONSÁVEL** pelo Empréstimo compromete-se a **ZELAR PELA CONSERVAÇÃO DO "
+    "EQUIPAMENTO** recebido em comodato, utilizando-o de forma adequada e exclusivamente para "
+    "sua finalidade. O equipamento será entregue após vistoria realizada pela CAAF, sendo "
+    "registrado seu estado de conservação no momento do empréstimo. A devolução do equipamento "
+    "ficará sujeita à nova vistoria da CAAF, que verificará suas condições de conservação e "
+    "funcionamento na entrega do item, levando em consideração o desgaste de uso normal."
 )
 
 _TEXTO_DANOS = (
@@ -374,7 +374,7 @@ _TEXTO_DANOS = (
     "correspondente ao reparo ou reposição do equipamento, conforme apresentado pela CAAF."
 )
 
-_CLAUSULA_5_INTRO = "5. Seguem os valores de taxa de cada item, caso haja constatação de avaria do equipamento:"
+_CLAUSULA_5_INTRO = "5. Seguem os **valores de taxa de cada item**, caso haja constatação de avaria do equipamento:"
 
 _TABELA_TAXAS = [
     ("Bota Ortopédica/Imobilizador/Colar/Colete/faixa", "R$ 40,00"),
@@ -401,18 +401,19 @@ _CLAUSULA_6 = (
 )
 _CLAUSULA_7 = "7. O cilindro de oxigênio deve ser devolvido recarregado diretamente na CAAF."
 _CLAUSULA_8 = (
-    "8. O Responsável pelo Empréstimo deverá devolver o bem devidamente higienizado, caso "
-    "contrário deverá pagar a taxa de R$ 40,00 para higienização do equipamento."
+    "8. O **Responsável pelo Empréstimo** deverá **DEVOLVER** o bem devidamente "
+    "**HIGIENIZADO**, caso contrário deverá **PAGAR A TAXA** de R$ 40,00 para higienização do "
+    "equipamento."
 )
 _CLAUSULA_9 = (
-    "9. É vedado ao Responsável pelo Empréstimo sub-comodatar ou locar o equipamento emprestado "
-    "a terceiros, bem como ceder ou transferir o presente contrato sem prévia autorização, por "
-    "escrito, da Casa de Apoio Amor Fraterno."
+    "9. É vedado ao **Responsável pelo Empréstimo** sub-comodatar ou locar o equipamento "
+    "emprestado a terceiros, bem como ceder ou transferir o presente contrato sem prévia "
+    "autorização, por escrito, da Casa de Apoio Amor Fraterno."
 )
 _CLAUSULA_10 = (
-    "10. As despesas com o transporte do bem da sede da Casa de Apoio até a residência do "
-    "beneficiário serão de inteira responsabilidade do Responsável pelo Empréstimo, tanto na "
-    "retirada quanto na devolução."
+    "10. As despesas com o **TRANSPORTE** do bem da sede da Casa de Apoio até a residência do "
+    "beneficiário serão de inteira responsabilidade do **Responsável pelo Empréstimo**, tanto "
+    "na retirada quanto na devolução."
 )
 _CLAUSULA_11 = (
     "11. Caso a CAAF necessite realizar a busca de qualquer equipamento emprestado, será "
@@ -422,7 +423,7 @@ _CLAUSULA_11 = (
 )
 _CLAUSULA_12 = (
     "12. O presente instrumento será considerado rescindido de pleno direito em caso de "
-    "infração, por parte do Responsável pelo Empréstimo, de qualquer cláusula acordada, "
+    "infração, por parte do **Responsável pelo Empréstimo**, de qualquer cláusula acordada, "
     "assegurado à Casa de Apoio Amor Fraterno o direito de retirar, de onde quer que esteja, o "
     "bem ora cedido em comodato."
 )
@@ -434,8 +435,8 @@ _CLAUSULA_13 = (
 
 _TEXTO_ENCERRAMENTO = "E assim, por estarem justas e contratadas, as partes assinam o presente em duas vias de igual teor."
 _TEXTO_DECLARACAO = (
-    "Declaro que recebi o equipamento descrito neste contrato em perfeitas condições de uso, "
-    "funcionamento e conservação, comprometendo-me a devolvê-lo nas mesmas condições."
+    "**Declaro que recebi o equipamento descrito neste contrato em perfeitas condições de uso, "
+    "funcionamento e conservação, comprometendo-me a devolvê-lo nas mesmas condições.**"
 )
 
 _MESES_PT = {
@@ -482,7 +483,7 @@ def _gerar_pdf_contrato(
     pdf = DocumentoPDF(rodape=_RODAPE_CONTRATO)
     pdf.titulo_documento(f"CONTRATO DE COMODATO DE BEM MÓVEL EMPRÉSTIMO SOLIDÁRIO\n{identificador}")
 
-    pdf.paragrafo(f"IDENTIFICAÇÃO DO(A) BENEFICIÁRIO: {pessoa.nome}.")
+    pdf.paragrafo(f"IDENTIFICAÇÃO DO(A) BENEFICIÁRIO: **{pessoa.nome}**.")
     pdf.paragrafo(_TEXTO_INSTITUCIONAL)
     pdf.paragrafo(
         _TEXTO_PARTES.format(
