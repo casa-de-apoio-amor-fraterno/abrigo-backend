@@ -19,6 +19,7 @@ import io
 from pathlib import Path
 
 from fpdf import FPDF
+from fpdf.fonts import FontFace
 
 NOME_ENTIDADE = "CASA DE APOIO AMOR FRATERNO"
 NOME_ENTIDADE_TITULO = "Casa de Apoio Amor Fraterno"
@@ -58,8 +59,12 @@ def _texto_seguro(texto: str) -> str:
 
 
 class DocumentoPDF(FPDF):
-    def __init__(self, rodape: list[str] | None = None) -> None:
-        super().__init__(format="A4")
+    def __init__(self, rodape: list[str] | None = None, orientation: str = "P") -> None:
+        # `orientation="L"` (paisagem) usado pelos relatórios de listagem
+        # (Pessoas, Estadias, Materiais, Empréstimos — ver
+        # `app/features/relatorios/service.py`), que têm mais colunas do que
+        # cabem em retrato; o contrato continua em retrato (padrão).
+        super().__init__(orientation=orientation, format="A4")
         self._rodape = rodape
         self.set_auto_page_break(auto=True, margin=25)
         self.add_page()
@@ -131,6 +136,27 @@ class DocumentoPDF(FPDF):
                 self.cell(largura, 7, _texto_seguro(texto), border=1, align="C")
             self.ln()
         self.ln(3)
+
+    def tabela_relatorio(
+        self, cabecalho: list[str], linhas: list[list[str]], larguras: list[float] | None = None
+    ) -> None:
+        """Tabela de listagem com número arbitrário de colunas, quebra de
+        texto automática e cabeçalho repetido em toda página — usa o suporte
+        nativo do fpdf2 (`Table`), diferente de `tabela` acima, que é fixa em
+        2 colunas (item/valor) pro corpo do contrato."""
+        self.set_font("Helvetica", "", 8)
+        with self.table(
+            col_widths=larguras,
+            text_align="LEFT",
+            headings_style=FontFace(emphasis="BOLD", fill_color=(230, 230, 230)),
+        ) as tabela:
+            linha_cabecalho = tabela.row()
+            for texto in cabecalho:
+                linha_cabecalho.cell(_texto_seguro(texto))
+            for linha in linhas:
+                linha_tabela = tabela.row()
+                for texto in linha:
+                    linha_tabela.cell(_texto_seguro(str(texto)))
 
     def campo_assinatura(self, rotulo: str, imagem_assinatura: bytes | None = None) -> None:
         """Linha de assinatura. Se `imagem_assinatura` for passado (PNG

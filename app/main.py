@@ -19,6 +19,7 @@ from app.features.materiais.router import router as materiais_router
 from app.features.municipios.router import router as municipios_router
 from app.features.pessoas.router import router as pessoas_router
 from app.features.quartos.router import router as quartos_router
+from app.features.relatorios.router import router as relatorios_router
 from app.features.solicitacoes_cadastro.router import router as solicitacoes_cadastro_router
 from app.features.voluntarios.router import router as voluntarios_router
 
@@ -58,6 +59,7 @@ app.include_router(estadias_router, prefix="/api/estadias", tags=["estadias"])
 app.include_router(voluntarios_router, prefix="/api/voluntarios", tags=["voluntarios"])
 app.include_router(materiais_router, prefix="/api/materiais", tags=["materiais"])
 app.include_router(emprestimos_router, prefix="/api/emprestimos", tags=["emprestimos"])
+app.include_router(relatorios_router, prefix="/api/relatorios", tags=["relatorios"])
 app.include_router(
     solicitacoes_cadastro_router,
     prefix="/api/solicitacoes-cadastro",
