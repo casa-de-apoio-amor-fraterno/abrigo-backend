@@ -16,6 +16,20 @@ class PeriodoRelatorio(str, enum.Enum):
     ANUAL = "anual"
 
 
+class FiltroSituacaoEstadia(str, enum.Enum):
+    TODOS = "todos"
+    EM_ACOMPANHAMENTO = "em_acompanhamento"
+
+
+class FiltroSituacaoEmprestimo(str, enum.Enum):
+    TODOS = "todos"
+    # Item ainda com o beneficiário (situação diferente de "Devolvido") —
+    # não confundir com "Vencidos", que é um subconjunto disso (só os que
+    # já passaram da data de devolução prevista).
+    ALUGADOS = "alugados"
+    VENCIDOS = "vencidos"
+
+
 class RelatorioResumoItem(BaseModel):
     rotulo: str
     valor: str

@@ -16,7 +16,12 @@ from app.features.materiais.models import Material
 from app.features.municipios.models import Municipio
 from app.features.pessoas.models import Pessoa
 from app.features.quartos.models import Quarto
-from app.features.relatorios.schemas import PeriodoRelatorio, RelatorioResumoItem
+from app.features.relatorios.schemas import (
+    FiltroSituacaoEmprestimo,
+    FiltroSituacaoEstadia,
+    PeriodoRelatorio,
+    RelatorioResumoItem,
+)
 from app.shared.pdf import DocumentoPDF
 
 _DIAS_POR_PERIODO: dict[PeriodoRelatorio, int] = {
@@ -38,6 +43,39 @@ _ROTULO_PERIODO: dict[PeriodoRelatorio, str] = {
 
 def _data_limite(periodo: PeriodoRelatorio) -> date:
     return date.today() - timedelta(days=_DIAS_POR_PERIODO[periodo])
+
+
+_ROTULO_SITUACAO_ESTADIA: dict[FiltroSituacaoEstadia, str] = {
+    FiltroSituacaoEstadia.TODOS: "todas",
+    FiltroSituacaoEstadia.EM_ACOMPANHAMENTO: "somente em acompanhamento",
+}
+
+_ROTULO_SITUACAO_EMPRESTIMO: dict[FiltroSituacaoEmprestimo, str] = {
+    FiltroSituacaoEmprestimo.TODOS: "todos",
+    FiltroSituacaoEmprestimo.ALUGADOS: "somente alugados",
+    FiltroSituacaoEmprestimo.VENCIDOS: "somente vencidos",
+}
+
+
+def _criterios_situacao_estadia(situacao: FiltroSituacaoEstadia) -> tuple:
+    if situacao is FiltroSituacaoEstadia.EM_ACOMPANHAMENTO:
+        return (Estadia.situacao == SituacaoEstadia.EM_ACOMPANHAMENTO,)
+    return ()
+
+
+def _criterios_situacao_emprestimo(situacao: FiltroSituacaoEmprestimo) -> tuple:
+    # "Alugados" = item ainda com o beneficiário (situação diferente de
+    # "Devolvido"). "Vencidos" é um subconjunto disso: além de não
+    # devolvido, a data de devolução prevista já passou.
+    if situacao is FiltroSituacaoEmprestimo.ALUGADOS:
+        return (EmprestimoItem.situacao != "Devolvido",)
+    if situacao is FiltroSituacaoEmprestimo.VENCIDOS:
+        return (
+            EmprestimoItem.situacao != "Devolvido",
+            EmprestimoItem.data_devolucao.is_not(None),
+            EmprestimoItem.data_devolucao < date.today(),
+        )
+    return ()
 
 # Mesmo rodapé institucional impresso nos relatórios do sistema legado (ver
 # `relatorio_pessoas.pdf` etc. cedidos pela CAAF) — diferente do rodapé do
@@ -110,9 +148,11 @@ def gerar_pdf_pessoas(db: Session, periodo: PeriodoRelatorio) -> bytes:
     return pdf.gerar_bytes()
 
 
-def gerar_pdf_estadias(db: Session, periodo: PeriodoRelatorio) -> bytes:
+def gerar_pdf_estadias(
+    db: Session, periodo: PeriodoRelatorio, situacao: FiltroSituacaoEstadia = FiltroSituacaoEstadia.TODOS
+) -> bytes:
     limite = datetime.combine(_data_limite(periodo), datetime.min.time())
-    consulta = select(Estadia).where(Estadia.data_entrada >= limite)
+    consulta = select(Estadia).where(Estadia.data_entrada >= limite, *_criterios_situacao_estadia(situacao))
     estadias = list(db.scalars(consulta.order_by(Estadia.data_entrada.desc())).all())
     pessoas = {pessoa.id: pessoa for pessoa in db.scalars(select(Pessoa))}
     estados = {estado.id: estado.uf for estado in db.scalars(select(Estado))}
@@ -138,7 +178,10 @@ def gerar_pdf_estadias(db: Session, periodo: PeriodoRelatorio) -> bytes:
         )
 
     pdf = DocumentoPDF(rodape=_RODAPE, orientation="L")
-    pdf.titulo_documento(f"RELATÓRIO DE ESTADIAS - Entradas em: {_ROTULO_PERIODO[periodo]}\n{_gerado_em()}")
+    pdf.titulo_documento(
+        f"RELATÓRIO DE ESTADIAS - Entradas em: {_ROTULO_PERIODO[periodo]} "
+        f"({_ROTULO_SITUACAO_ESTADIA[situacao]})\n{_gerado_em()}"
+    )
     pdf.tabela_relatorio(
         ["Código", "Tipo - Pessoa", "UF", "Município", "Hospital", "Quarto", "Entrada", "Saída", "Situação"],
         linhas,
@@ -175,7 +218,9 @@ def gerar_pdf_materiais(db: Session) -> bytes:
     return pdf.gerar_bytes()
 
 
-def gerar_pdf_emprestimos(db: Session, periodo: PeriodoRelatorio) -> bytes:
+def gerar_pdf_emprestimos(
+    db: Session, periodo: PeriodoRelatorio, situacao: FiltroSituacaoEmprestimo = FiltroSituacaoEmprestimo.TODOS
+) -> bytes:
     limite = _data_limite(periodo)
     emprestimos = {
         emprestimo.id: emprestimo
@@ -191,7 +236,11 @@ def gerar_pdf_emprestimos(db: Session, periodo: PeriodoRelatorio) -> bytes:
     itens_no_periodo = list(
         db.scalars(
             select(EmprestimoItem)
-            .where(EmprestimoItem.data_emprestimo.is_not(None), EmprestimoItem.data_emprestimo >= limite)
+            .where(
+                EmprestimoItem.data_emprestimo.is_not(None),
+                EmprestimoItem.data_emprestimo >= limite,
+                *_criterios_situacao_emprestimo(situacao),
+            )
             .order_by(EmprestimoItem.data_emprestimo.desc())
         )
     )
@@ -215,7 +264,10 @@ def gerar_pdf_emprestimos(db: Session, periodo: PeriodoRelatorio) -> bytes:
         )
 
     pdf = DocumentoPDF(rodape=_RODAPE, orientation="L")
-    pdf.titulo_documento(f"RELATÓRIO DE EMPRÉSTIMOS - Emprestados em: {_ROTULO_PERIODO[periodo]}\n{_gerado_em()}")
+    pdf.titulo_documento(
+        f"RELATÓRIO DE EMPRÉSTIMOS - Emprestados em: {_ROTULO_PERIODO[periodo]} "
+        f"({_ROTULO_SITUACAO_EMPRESTIMO[situacao]})\n{_gerado_em()}"
+    )
     pdf.tabela_relatorio(
         ["Beneficiário", "Telefone", "Item", "Nº Contrato", "Data empréstimo", "Data devolução", "Situação"],
         linhas,
@@ -239,14 +291,19 @@ def resumo_pessoas(db: Session, periodo: PeriodoRelatorio) -> list[RelatorioResu
     ]
 
 
-def resumo_estadias(db: Session, periodo: PeriodoRelatorio) -> list[RelatorioResumoItem]:
+def resumo_estadias(
+    db: Session, periodo: PeriodoRelatorio, situacao: FiltroSituacaoEstadia = FiltroSituacaoEstadia.TODOS
+) -> list[RelatorioResumoItem]:
     limite = datetime.combine(_data_limite(periodo), datetime.min.time())
-    total_geral = db.scalar(select(func.count()).select_from(Estadia))
+    criterios_situacao = _criterios_situacao_estadia(situacao)
+    total_geral = db.scalar(select(func.count()).select_from(Estadia).where(*criterios_situacao))
     em_acompanhamento = db.scalar(
         select(func.count()).select_from(Estadia).where(Estadia.situacao == SituacaoEstadia.EM_ACOMPANHAMENTO)
     )
     no_periodo = db.scalar(
-        select(func.count()).select_from(Estadia).where(Estadia.data_entrada >= limite)
+        select(func.count())
+        .select_from(Estadia)
+        .where(Estadia.data_entrada >= limite, *criterios_situacao)
     )
     return [
         RelatorioResumoItem(rotulo=f"Novas estadias ({_ROTULO_PERIODO[periodo]})", valor=str(no_periodo or 0)),
@@ -272,17 +329,26 @@ def resumo_materiais(db: Session) -> list[RelatorioResumoItem]:
     ]
 
 
-def resumo_emprestimos(db: Session, periodo: PeriodoRelatorio) -> list[RelatorioResumoItem]:
+def resumo_emprestimos(
+    db: Session,
+    periodo: PeriodoRelatorio,
+    situacao: FiltroSituacaoEmprestimo = FiltroSituacaoEmprestimo.TODOS,
+) -> list[RelatorioResumoItem]:
     limite = _data_limite(periodo)
+    criterios_situacao = _criterios_situacao_emprestimo(situacao)
     itens_no_periodo = db.scalar(
         select(func.count())
         .select_from(EmprestimoItem)
-        .where(EmprestimoItem.data_emprestimo.is_not(None), EmprestimoItem.data_emprestimo >= limite)
+        .where(
+            EmprestimoItem.data_emprestimo.is_not(None),
+            EmprestimoItem.data_emprestimo >= limite,
+            *criterios_situacao,
+        )
     )
-    pendentes = db.scalar(
+    itens_vencidos = db.scalar(
         select(func.count())
-        .select_from(Emprestimo)
-        .where(Emprestimo.ativo.is_(True), Emprestimo.situacao == "Pendente")
+        .select_from(EmprestimoItem)
+        .where(*_criterios_situacao_emprestimo(FiltroSituacaoEmprestimo.VENCIDOS))
     )
     itens_em_aberto = db.scalar(
         select(func.count()).select_from(EmprestimoItem).where(EmprestimoItem.situacao != "Devolvido")
@@ -291,6 +357,6 @@ def resumo_emprestimos(db: Session, periodo: PeriodoRelatorio) -> list[Relatorio
         RelatorioResumoItem(
             rotulo=f"Itens emprestados ({_ROTULO_PERIODO[periodo]})", valor=str(itens_no_periodo or 0)
         ),
-        RelatorioResumoItem(rotulo="Pendentes de devolução (geral)", valor=str(pendentes or 0)),
+        RelatorioResumoItem(rotulo="Vencidos (geral)", valor=str(itens_vencidos or 0)),
         RelatorioResumoItem(rotulo="Itens emprestados no momento (geral)", valor=str(itens_em_aberto or 0)),
     ]
