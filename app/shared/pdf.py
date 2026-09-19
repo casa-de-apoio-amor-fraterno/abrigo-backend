@@ -158,6 +158,16 @@ class DocumentoPDF(FPDF):
                 for texto in linha:
                     linha_tabela.cell(_texto_seguro(str(texto)))
 
+    def totais(self, linhas: list[str]) -> None:
+        """Linha(s) de totalizadores ao final da tabela de um relatório de
+        listagem (ex.: "Total de pessoas: 42") — mesmo padrão dos
+        relatórios do sistema legado cedidos pela CAAF, que sempre fecham
+        com um totalizador alinhado à direita, em negrito."""
+        self.ln(2)
+        self.set_font("Helvetica", "B", 10)
+        for linha in linhas:
+            self.cell(0, 6, _texto_seguro(linha), align="R", new_x="LMARGIN", new_y="NEXT")
+
     def campo_assinatura(self, rotulo: str, imagem_assinatura: bytes | None = None) -> None:
         """Linha de assinatura. Se `imagem_assinatura` for passado (PNG
         capturado do canvas de assinatura por toque/caneta — ver

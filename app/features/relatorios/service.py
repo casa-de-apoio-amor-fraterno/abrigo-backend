@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.features.emprestimos.models import Emprestimo, EmprestimoItem
-from app.features.estadias.models import Estadia, SituacaoEstadia
+from app.features.estadias.models import Estadia, SituacaoEstadia, TipoPessoaEstadia
 from app.features.estados.models import Estado
 from app.features.hospitais.models import Hospital
 from app.features.materiais.models import Material
@@ -145,6 +145,7 @@ def gerar_pdf_pessoas(db: Session, periodo: PeriodoRelatorio) -> bytes:
         linhas,
         larguras=[18, 10, 12, 12, 5, 13, 30],
     )
+    pdf.totais([f"Total de pessoas: {len(pessoas)}"])
     return pdf.gerar_bytes()
 
 
@@ -187,6 +188,15 @@ def gerar_pdf_estadias(
         linhas,
         larguras=[7, 25, 5, 13, 15, 8, 10, 10, 12],
     )
+    total_pacientes = sum(1 for e in estadias if e.tipo_pessoa == TipoPessoaEstadia.PACIENTE)
+    total_acompanhantes = len(estadias) - total_pacientes
+    pdf.totais(
+        [
+            f"Total de estadias: {len(estadias)}",
+            f"Total de pacientes: {total_pacientes}",
+            f"Total de acompanhantes: {total_acompanhantes}",
+        ]
+    )
     return pdf.gerar_bytes()
 
 
@@ -214,6 +224,15 @@ def gerar_pdf_materiais(db: Session) -> bytes:
         ["Cód.", "Cód. Identificação", "Descrição", "Local", "Situação", "Disp. Empréstimo", "Motivo baixa"],
         linhas,
         larguras=[8, 15, 30, 10, 12, 12, 23],
+    )
+    total_disponiveis = sum(1 for m in materiais if m.disponivel_emprestimo)
+    total_baixados = sum(1 for m in materiais if m.situacao == "Baixado")
+    pdf.totais(
+        [
+            f"Total de materiais: {len(materiais)}",
+            f"Total disponíveis: {total_disponiveis}",
+            f"Total baixados: {total_baixados}",
+        ]
     )
     return pdf.gerar_bytes()
 
@@ -272,6 +291,13 @@ def gerar_pdf_emprestimos(
         ["Beneficiário", "Telefone", "Item", "Nº Contrato", "Data empréstimo", "Data devolução", "Situação"],
         linhas,
         larguras=[22, 15, 20, 10, 12, 12, 9],
+    )
+    total_emprestimos = len({item.id_emprestimo for item in itens_no_periodo})
+    pdf.totais(
+        [
+            f"Total de itens: {len(linhas)}",
+            f"Total de empréstimos: {total_emprestimos}",
+        ]
     )
     return pdf.gerar_bytes()
 
