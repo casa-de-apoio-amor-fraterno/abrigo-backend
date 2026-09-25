@@ -25,14 +25,16 @@ def test_listar_sem_token_retorna_401(client, db_session):
     assert resposta.status_code == 401
 
 
-def test_listar_com_perfil_errado_retorna_403(client, db_session, usuario_migrado):
+def test_listar_com_qualquer_perfil_retorna_200(client, db_session, usuario_migrado):
+    # Diferente de avaliacao_social, composicao_familiar não é restrita a
+    # perfil "Assistente Social" — qualquer usuário autenticado acessa.
     pessoa = _criar_pessoa(db_session)
 
     resposta = client.get(
         f"/api/pessoas/{pessoa.id}/composicao-familiar", headers=_auth_header(usuario_migrado)
     )
 
-    assert resposta.status_code == 403
+    assert resposta.status_code == 200
 
 
 def test_criar_listar_e_remover_membro(client, db_session, usuario_legado):

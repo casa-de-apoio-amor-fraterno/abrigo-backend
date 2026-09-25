@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.features.auth.dependencies import exigir_perfil
+from app.features.auth.dependencies import usuario_atual
 from app.features.composicao_familiar import service
 from app.features.composicao_familiar.schemas import (
     ComposicaoFamiliarCreate,
@@ -10,7 +10,14 @@ from app.features.composicao_familiar.schemas import (
     ComposicaoFamiliarUpdate,
 )
 
-router = APIRouter(dependencies=[Depends(exigir_perfil("Assistente Social"))])
+# Antes restrito a perfil "Assistente Social" (mesma regra de
+# avaliacao_social) — decisão do time: composição familiar não é dado
+# sensível o bastante pra justificar a trava (diferente de avaliação
+# social), e a restrição provavelmente é a causa da aba ter parado de ser
+# usada a partir de 2025 (perfis "Geral" não conseguiam nem abrir a aba).
+# Continua exigindo login (`usuario_atual`), só não mais um perfil
+# específico.
+router = APIRouter(dependencies=[Depends(usuario_atual)])
 
 
 @router.get("", response_model=list[ComposicaoFamiliarResponse])
