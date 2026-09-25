@@ -25,10 +25,19 @@ class QuartoResponse(QuartoBase):
 
 
 class QuartoOcupanteResponse(BaseModel):
+    # Sempre o id de uma `Estadia` de verdade — pra um acompanhante que
+    # ocupa leito (`acompanhante=True`), é o id da estadia do PACIENTE que
+    # ele acompanha (não existe uma "Estadia" própria dele nesse caso; ver
+    # `EstadiaAcompanhante.ocupa_leito`), pra continuar navegável (editar
+    # estadia) mesmo nesse caso.
     id_estadia: int
     id_pessoa: int
     nome_pessoa: str
     data_entrada: datetime
+    # True quando esse leito é ocupado por um acompanhante
+    # (`EstadiaAcompanhante.ocupa_leito`), não pelo paciente/titular da
+    # estadia — usado pra colorir o leito diferente no painel de ocupação.
+    acompanhante: bool = False
 
 
 class QuartoOcupacaoResponse(BaseModel):

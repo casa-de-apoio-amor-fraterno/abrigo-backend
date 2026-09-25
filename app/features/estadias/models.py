@@ -110,7 +110,19 @@ class Estadia(Base):
 class EstadiaAcompanhante(Base):
     """Mapeia a tabela `estadia_acompanhante` — pessoas que acompanham a
     estadia de um paciente, com sua própria janela de entrada/saída e grau
-    de parentesco. Ver decisão em `estadia.legacy.md` (achado 3)."""
+    de parentesco. Ver decisão em `estadia.legacy.md` (achado 3).
+
+    Só pode existir pra estadias com `tipo_pessoa == PACIENTE` — uma
+    estadia que já é de um acompanhante (tem leito próprio) não tem
+    sentido ter acompanhante dela mesma (regra do time, 2026-09-25,
+    validada em `service.adicionar_acompanhante`).
+
+    `ocupa_leito` (opcional, default `False`, migração 0024): diferente
+    de `Estadia.tipo_pessoa == ACOMPANHANTE` (outra `Estadia`, com seu
+    próprio leito) — aqui é o mesmo acompanhante desta lista que, além de
+    acompanhar, também ocupa um dos leitos do quarto do paciente. Usado
+    pra colorir esse leito diferente no painel de ocupação (tela Início).
+    """
 
     __tablename__ = "estadia_acompanhante"
 
@@ -120,6 +132,7 @@ class EstadiaAcompanhante(Base):
     data_entrada: Mapped[datetime] = mapped_column(DateTime)
     data_saida: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     grau_parentesco: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    ocupa_leito: Mapped[bool] = mapped_column(default=False)
 
 
 class EstadiaHistorico(Base):

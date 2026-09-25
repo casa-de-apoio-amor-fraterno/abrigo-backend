@@ -28,6 +28,10 @@ class EstadiaAcompanhanteBase(BaseModel):
     data_entrada: datetime
     data_saida: datetime | None = None
     grau_parentesco: str | None = None
+    # Opcional — o acompanhante também ocupa um dos leitos do quarto do
+    # paciente (diferente de `Estadia.tipo_pessoa == ACOMPANHANTE`, que é
+    # uma estadia própria; ver `models.py`).
+    ocupa_leito: bool = False
 
 
 class EstadiaAcompanhanteCreate(EstadiaAcompanhanteBase):

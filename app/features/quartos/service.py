@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.features.estadias.models import Estadia, SituacaoEstadia
+from app.features.estadias.models import Estadia, EstadiaAcompanhante, SituacaoEstadia
 from app.features.pessoas.models import Pessoa
 from app.features.quartos.models import Quarto
 from app.features.quartos.schemas import QuartoCreate, QuartoUpdate
@@ -38,12 +38,46 @@ def listar_ocupacao(db: Session) -> list[dict]:
                 "id_pessoa": id_pessoa,
                 "nome_pessoa": nome_pessoa,
                 "data_entrada": data_entrada,
+                "acompanhante": False,
+            }
+        )
+
+    # Acompanhantes que também ocupam um leito do mesmo quarto do paciente
+    # (`EstadiaAcompanhante.ocupa_leito`) — ainda presentes (`data_saida`
+    # nulo) e cuja estadia do paciente segue "Em acompanhamento". Entram no
+    # mesmo pool de ocupantes do quarto, disputando os `leito` lugares
+    # junto com o(s) titular(es) — mesma heurística de excedente vira
+    # `pendentes_revisao`.
+    linhas_acompanhante = db.execute(
+        select(
+            Estadia.id,
+            Estadia.id_quarto,
+            EstadiaAcompanhante.id_pessoa,
+            EstadiaAcompanhante.data_entrada,
+            Pessoa.nome,
+        )
+        .join(Estadia, Estadia.id == EstadiaAcompanhante.id_estadia)
+        .join(Pessoa, Pessoa.id == EstadiaAcompanhante.id_pessoa)
+        .where(
+            EstadiaAcompanhante.ocupa_leito.is_(True),
+            EstadiaAcompanhante.data_saida.is_(None),
+            Estadia.situacao == SituacaoEstadia.EM_ACOMPANHAMENTO,
+        )
+    ).all()
+    for id_estadia, id_quarto, id_pessoa, data_entrada, nome_pessoa in linhas_acompanhante:
+        por_quarto.setdefault(id_quarto, []).append(
+            {
+                "id_estadia": id_estadia,
+                "id_pessoa": id_pessoa,
+                "nome_pessoa": nome_pessoa,
+                "data_entrada": data_entrada,
+                "acompanhante": True,
             }
         )
 
     resultado = []
     for quarto in quartos:
-        todas = por_quarto.get(quarto.id, [])
+        todas = sorted(por_quarto.get(quarto.id, []), key=lambda linha: linha["data_entrada"], reverse=True)
         resultado.append(
             {
                 "id": quarto.id,

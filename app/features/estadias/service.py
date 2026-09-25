@@ -188,6 +188,20 @@ def encerrar(
         estadia.tempo_estadia_valor = tempo_estadia_valor
     if tempo_estadia_unidade is not None:
         estadia.tempo_estadia_unidade = tempo_estadia_unidade
+
+    # Acompanhantes que ainda não têm data_saida própria são encerrados
+    # junto (não faz sentido continuar "presentes" numa estadia já
+    # finalizada) — usa a mesma data_saida da estadia, inclusive os que
+    # ocupam leito (ver EstadiaAcompanhante.ocupa_leito), pra liberar o
+    # leito no painel de ocupação.
+    for acompanhante in db.scalars(
+        select(EstadiaAcompanhante).where(
+            EstadiaAcompanhante.id_estadia == estadia.id,
+            EstadiaAcompanhante.data_saida.is_(None),
+        )
+    ):
+        acompanhante.data_saida = estadia.data_saida
+
     db.commit()
     db.refresh(estadia)
     # Opcional (ver EstadiaEncerrarRequest.id_usuario) — só registra no

@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
 from app.core.security import criar_token_acesso
-from app.features.estadias.models import Estadia, SituacaoEstadia
+from app.features.estadias.models import Estadia, EstadiaAcompanhante, SituacaoEstadia
 from app.features.pessoas.models import Pessoa
 from app.features.quartos.models import Quarto
 from app.features.usuarios.models import Usuario
@@ -196,3 +196,53 @@ def test_listar_ocupacao(client, db_session):
     assert quarto_12["leito"] == 3
     assert quarto_12["ocupantes"] == []
     assert quarto_12["pendentes_revisao"] == []
+
+
+def test_listar_ocupacao_com_acompanhante_ocupando_leito(client, db_session):
+    # Acompanhante com `ocupa_leito=True` disputa vaga no mesmo quarto do
+    # paciente que acompanha, junto com o titular — e vem marcado
+    # `acompanhante=True` pro front colorir diferente.
+    paciente = Pessoa(nome="Maria da Silva", data_nascimento=date(1990, 1, 1), data_cadastro=date.today())
+    acompanhante_pessoa = Pessoa(
+        nome="José da Silva", data_nascimento=date(1988, 5, 20), data_cadastro=date.today()
+    )
+    usuario = Usuario(login="joana2", nome="Joana", perfil="geral", senha="123456")
+    quarto = Quarto(numero="30", leito=2, ativo=True)
+    db_session.add_all([paciente, acompanhante_pessoa, usuario, quarto])
+    db_session.commit()
+    db_session.refresh(paciente)
+    db_session.refresh(acompanhante_pessoa)
+    db_session.refresh(usuario)
+    db_session.refresh(quarto)
+
+    estadia = Estadia(
+        id_pessoa=paciente.id,
+        id_quarto=quarto.id,
+        id_usuario=usuario.id,
+        data_entrada=datetime(2026, 1, 1),
+        situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+    )
+    db_session.add(estadia)
+    db_session.commit()
+    db_session.refresh(estadia)
+
+    db_session.add(
+        EstadiaAcompanhante(
+            id_estadia=estadia.id,
+            id_pessoa=acompanhante_pessoa.id,
+            data_entrada=datetime(2026, 1, 1),
+            grau_parentesco="Filho",
+            ocupa_leito=True,
+        )
+    )
+    db_session.commit()
+
+    resposta = client.get("/api/quartos/ocupacao", headers=_auth_header(usuario))
+
+    assert resposta.status_code == 200
+    quarto_30 = next(q for q in resposta.json() if q["numero"] == "30")
+    assert len(quarto_30["ocupantes"]) == 2
+    ocupantes_por_pessoa = {o["id_pessoa"]: o for o in quarto_30["ocupantes"]}
+    assert ocupantes_por_pessoa[paciente.id]["acompanhante"] is False
+    assert ocupantes_por_pessoa[acompanhante_pessoa.id]["acompanhante"] is True
+    assert ocupantes_por_pessoa[acompanhante_pessoa.id]["id_estadia"] == estadia.id

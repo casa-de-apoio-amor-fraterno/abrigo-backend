@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
 from app.core.security import criar_token_acesso
-from app.features.estadias.models import Estadia, SituacaoEstadia
+from app.features.estadias.models import Estadia, EstadiaAcompanhante, SituacaoEstadia, TipoPessoaEstadia
 from app.features.pessoas.models import Pessoa
 from app.features.quartos.models import Quarto
 from app.features.usuarios.models import Usuario
@@ -231,6 +231,66 @@ def test_encerrar_estadia_com_tempo_calculado(client, db_session):
     assert corpo["tempo_estadia_unidade"] == "dias"
 
 
+def test_encerrar_estadia_encerra_acompanhantes_sem_saida(client, db_session):
+    # Acompanhante ainda "presente" (data_saida nula) não faz sentido
+    # continuar assim numa estadia já finalizada — recebe a mesma
+    # data_saida da estadia. Um acompanhante que já tinha saído antes não é
+    # mexido (sua própria data_saida é preservada).
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    acompanhante_presente = Pessoa(
+        nome="João Souza", data_nascimento=date(1985, 5, 5), data_cadastro=date.today()
+    )
+    acompanhante_ja_saiu = Pessoa(
+        nome="Ana Souza", data_nascimento=date(1986, 6, 6), data_cadastro=date.today()
+    )
+    db_session.add_all([acompanhante_presente, acompanhante_ja_saiu])
+    db_session.commit()
+    db_session.refresh(acompanhante_presente)
+    db_session.refresh(acompanhante_ja_saiu)
+
+    estadia = Estadia(
+        id_pessoa=deps["pessoa"].id,
+        id_quarto=deps["quarto"].id,
+        id_usuario=deps["usuario"].id,
+        data_entrada=datetime(2026, 1, 1),
+        situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+    )
+    db_session.add(estadia)
+    db_session.commit()
+    db_session.refresh(estadia)
+
+    db_session.add_all(
+        [
+            EstadiaAcompanhante(
+                id_estadia=estadia.id,
+                id_pessoa=acompanhante_presente.id,
+                data_entrada=datetime(2026, 1, 1),
+                ocupa_leito=True,
+            ),
+            EstadiaAcompanhante(
+                id_estadia=estadia.id,
+                id_pessoa=acompanhante_ja_saiu.id,
+                data_entrada=datetime(2026, 1, 1),
+                data_saida=datetime(2026, 1, 2),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    resposta = client.post(
+        f"/api/estadias/{estadia.id}/encerrar",
+        json={"data_saida": "2026-01-04T00:00:00"},
+        headers=headers,
+    )
+    assert resposta.status_code == 200
+
+    resposta = client.get(f"/api/estadias/{estadia.id}/acompanhantes", headers=headers)
+    acompanhantes = {a["id_pessoa"]: a for a in resposta.json()}
+    assert acompanhantes[acompanhante_presente.id]["data_saida"] == "2026-01-04T00:00:00"
+    assert acompanhantes[acompanhante_ja_saiu.id]["data_saida"] == "2026-01-02T00:00:00"
+
+
 def test_adicionar_e_listar_acompanhante(client, db_session):
     deps = _criar_dependencias(db_session)
     headers = _auth_header(deps["usuario"])
@@ -268,6 +328,160 @@ def test_adicionar_e_listar_acompanhante(client, db_session):
     corpo = resposta.json()
     assert len(corpo) == 1
     assert corpo[0]["grau_parentesco"] == "irmã"
+
+
+def test_adicionar_acompanhante_rejeita_estadia_tipo_acompanhante(client, db_session):
+    # Regra do time (2026-09-25): só estadia de paciente pode ter
+    # acompanhante — uma estadia que já é de um acompanhante (tem leito
+    # próprio) não tem sentido ter acompanhante dela mesma.
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    acompanhante = Pessoa(
+        nome="João Souza", data_nascimento=date(1985, 5, 5), data_cadastro=date.today()
+    )
+    db_session.add(acompanhante)
+    db_session.commit()
+    db_session.refresh(acompanhante)
+
+    estadia = Estadia(
+        id_pessoa=deps["pessoa"].id,
+        id_quarto=deps["quarto"].id,
+        id_usuario=deps["usuario"].id,
+        data_entrada=datetime(2026, 1, 1),
+        situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+        tipo_pessoa=TipoPessoaEstadia.ACOMPANHANTE,
+    )
+    db_session.add(estadia)
+    db_session.commit()
+    db_session.refresh(estadia)
+
+    resposta = client.post(
+        f"/api/estadias/{estadia.id}/acompanhantes",
+        json={
+            "id_pessoa": acompanhante.id,
+            "data_entrada": "2026-01-01T00:00:00",
+            "grau_parentesco": "irmã",
+        },
+        headers=headers,
+    )
+
+    assert resposta.status_code == 400
+
+
+def test_criar_estadia_tipo_acompanhante_rejeita_acompanhantes_aninhados(client, db_session):
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    acompanhante = Pessoa(
+        nome="João Souza", data_nascimento=date(1985, 5, 5), data_cadastro=date.today()
+    )
+    db_session.add(acompanhante)
+    db_session.commit()
+    db_session.refresh(acompanhante)
+
+    resposta = client.post(
+        "/api/estadias",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_quarto": deps["quarto"].id,
+            "id_usuario": deps["usuario"].id,
+            "data_entrada": "2026-01-10T00:00:00",
+            "situacao": "Em acompanhamento",
+            "tipo_pessoa": "Acompanhante",
+            "acompanhantes": [
+                {
+                    "id_pessoa": acompanhante.id,
+                    "data_entrada": "2026-01-10T00:00:00",
+                    "grau_parentesco": "Filho",
+                }
+            ],
+        },
+        headers=headers,
+    )
+
+    assert resposta.status_code == 400
+
+
+def test_atualizar_rejeita_mudar_tipo_pessoa_com_acompanhantes(client, db_session):
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    acompanhante = Pessoa(
+        nome="João Souza", data_nascimento=date(1985, 5, 5), data_cadastro=date.today()
+    )
+    db_session.add(acompanhante)
+    db_session.commit()
+    db_session.refresh(acompanhante)
+
+    estadia = Estadia(
+        id_pessoa=deps["pessoa"].id,
+        id_quarto=deps["quarto"].id,
+        id_usuario=deps["usuario"].id,
+        data_entrada=datetime(2026, 1, 1),
+        situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+    )
+    db_session.add(estadia)
+    db_session.commit()
+    db_session.refresh(estadia)
+
+    client.post(
+        f"/api/estadias/{estadia.id}/acompanhantes",
+        json={
+            "id_pessoa": acompanhante.id,
+            "data_entrada": "2026-01-01T00:00:00",
+            "grau_parentesco": "irmã",
+        },
+        headers=headers,
+    )
+
+    resposta = client.put(
+        f"/api/estadias/{estadia.id}",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_quarto": deps["quarto"].id,
+            "id_usuario": deps["usuario"].id,
+            "data_entrada": "2026-01-01T00:00:00",
+            "situacao": "Em acompanhamento",
+            "tipo_pessoa": "Acompanhante",
+        },
+        headers=headers,
+    )
+
+    assert resposta.status_code == 400
+
+
+def test_adicionar_acompanhante_com_ocupa_leito(client, db_session):
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    acompanhante = Pessoa(
+        nome="João Souza", data_nascimento=date(1985, 5, 5), data_cadastro=date.today()
+    )
+    db_session.add(acompanhante)
+    db_session.commit()
+    db_session.refresh(acompanhante)
+
+    estadia = Estadia(
+        id_pessoa=deps["pessoa"].id,
+        id_quarto=deps["quarto"].id,
+        id_usuario=deps["usuario"].id,
+        data_entrada=datetime(2026, 1, 1),
+        situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+    )
+    db_session.add(estadia)
+    db_session.commit()
+    db_session.refresh(estadia)
+
+    resposta = client.post(
+        f"/api/estadias/{estadia.id}/acompanhantes",
+        json={
+            "id_pessoa": acompanhante.id,
+            "data_entrada": "2026-01-01T00:00:00",
+            "grau_parentesco": "irmã",
+            "ocupa_leito": True,
+        },
+        headers=headers,
+    )
+
+    assert resposta.status_code == 201
+    assert resposta.json()["ocupa_leito"] is True
 
 
 def test_buscar_estadia_inexistente(client, usuario_legado):

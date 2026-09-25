@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.features.auth.dependencies import usuario_atual
 from app.features.estadias import service
-from app.features.estadias.models import SituacaoEstadia
+from app.features.estadias.models import SituacaoEstadia, TipoPessoaEstadia
 from app.features.estadias.schemas import (
     EstadiaAcompanhanteCreate,
     EstadiaAcompanhanteResponse,
@@ -49,6 +49,10 @@ def buscar(estadia_id: int, db: Session = Depends(get_db)) -> EstadiaResponse:
 
 @router.post("", response_model=EstadiaResponse, status_code=201)
 def criar(dados: EstadiaCreate, db: Session = Depends(get_db)) -> EstadiaResponse:
+    if dados.acompanhantes and dados.tipo_pessoa != TipoPessoaEstadia.PACIENTE:
+        raise HTTPException(
+            status_code=400, detail="Só estadias de paciente podem ter acompanhantes"
+        )
     return EstadiaResponse.model_validate(service.criar(db, dados))
 
 
@@ -57,6 +61,11 @@ def atualizar(estadia_id: int, dados: EstadiaUpdate, db: Session = Depends(get_d
     estadia = service.buscar(db, estadia_id)
     if estadia is None:
         raise HTTPException(status_code=404, detail="Estadia não encontrada")
+    if dados.tipo_pessoa != TipoPessoaEstadia.PACIENTE and service.listar_acompanhantes(db, estadia_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Não é possível mudar o tipo de pessoa: esta estadia já tem acompanhantes",
+        )
     return EstadiaResponse.model_validate(service.atualizar(db, estadia, dados))
 
 
@@ -100,6 +109,10 @@ def adicionar_acompanhante(
     estadia = service.buscar(db, estadia_id)
     if estadia is None:
         raise HTTPException(status_code=404, detail="Estadia não encontrada")
+    if estadia.tipo_pessoa != TipoPessoaEstadia.PACIENTE:
+        raise HTTPException(
+            status_code=400, detail="Só estadias de paciente podem ter acompanhantes"
+        )
     return EstadiaAcompanhanteResponse.model_validate(
         service.adicionar_acompanhante(db, estadia_id, dados)
     )
