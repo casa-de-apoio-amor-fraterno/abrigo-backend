@@ -373,13 +373,128 @@ def transformar_avaliacao_social(linha: dict) -> dict:
     }
 
 
+# Mesmo mapeamento da migração 0023
+# (alembic/versions/0023_composicao_familiar_grau_parentesco_enum.py),
+# duplicado aqui de propósito: migrações do Alembic são fotos congeladas
+# do banco num ponto no tempo e não devem importar código da aplicação,
+# que pode mudar depois. Se uma reimportar do dump legado (`sgf_abrigo`)
+# rodar de novo, o ETL precisa devolver a mesma lista fechada de
+# `GrauParentesco` (app/features/composicao_familiar/models.py) que a
+# migração já normalizou pro dado existente — senão a reimportação
+# desfaz a normalização. Ver a docstring da migração 0023 pro raciocínio
+# completo por trás de cada variação.
+_MAPA_GRAU_PARENTESCO: dict[str, list[str]] = {
+    "Pai": ["pai", "genitor"],
+    "Mãe": [
+        "mae",
+        "mãe",
+        "genitora",
+        "gernitora",
+        "mãe de criação",
+        "mãe/sogra",
+        "genitora de jessica bona",
+    ],
+    "Filho": ["filho", "filho/enteado", "filho/neto"],
+    "Filha": [
+        "filha",
+        "filha adotiva",
+        "filha cuidadora",
+        "filha de criação",
+        "filha/enteada",
+        "filha/neta",
+    ],
+    "Esposo": ["esposo", "marido", "marido/dirlane"],
+    "Esposa": ["esposa", "espoosa", "esposa/nora"],
+    "Companheiro": ["companheiro"],
+    "Companheira": ["companheira"],
+    "Namorado": ["namorado"],
+    "Namorada": ["namorada"],
+    "Irmão": ["irmão"],
+    "Irmã": ["irma", "irmã"],
+    "Avô": ["avô"],
+    "Avó": ["avó", "avo"],
+    "Bisavô": [],
+    "Bisavó": ["bisavó"],
+    "Neto": ["neto", "neto/filho"],
+    "Neta": ["neta"],
+    "Bisneto": ["bisneto"],
+    "Bisneta": ["bisneta"],
+    "Genro": ["genro"],
+    "Nora": ["nora"],
+    "Sogro": ["sogro"],
+    "Sogra": ["sogra"],
+    "Cunhado": ["cunhado"],
+    "Cunhada": ["cunhada"],
+    "Tio": ["tio"],
+    "Tia": ["tia"],
+    "Sobrinho": ["sobrinho"],
+    "Sobrinha": ["sobrinha"],
+    "Primo": ["primo"],
+    "Prima": ["prima"],
+    "Enteado": ["enteado"],
+    "Enteada": ["enteada", "enteadaa"],
+    "Padrasto": ["padrasto", "padastro", "padrastro"],
+    "Madrasta": ["madastra"],
+    "Cuidador": ["cuidador"],
+    "Cuidadora": ["cuidadora"],
+    "Responsável": ["responsavel", "responsável"],
+    "Outro": [
+        "",
+        "-",
+        "--",
+        "---",
+        "----",
+        "-----",
+        "------",
+        "-------",
+        "--------",
+        ".",
+        "......",
+        "==-",
+        "===",
+        "====",
+        "=====",
+        "0---",
+        "0----",
+        "hfh",
+        "vizinho",
+        "amiga",
+        "casada",
+        "casado",
+        "solteiro",
+        "conjuge",
+        "esposo da cuidora",
+        "marido da sobrinha",
+        "sobrinha neta",
+        "ex-marido",
+    ],
+}
+
+_VARIACAO_PARA_GRAU_PARENTESCO: dict[str, str] = {
+    variacao: valor for valor, variacoes in _MAPA_GRAU_PARENTESCO.items() for variacao in variacoes
+}
+
+
+def normalizar_grau_parentesco(valor: str | None) -> str:
+    """Normaliza o `grau_parentesco` (texto livre no legado) pra um dos 38
+    valores fechados de `GrauParentesco`
+    (app/features/composicao_familiar/models.py), usando o mesmo
+    mapeamento da migração 0023. Qualquer variação não reconhecida
+    (incluindo `None`/vazio) cai em `"Outro"` — mesmo fallback da
+    migração, nunca levanta erro pra dado legado imprevisto.
+    """
+    if valor is None:
+        return "Outro"
+    return _VARIACAO_PARA_GRAU_PARENTESCO.get(valor.strip().lower(), "Outro")
+
+
 def transformar_composicao_familiar(linha: dict) -> dict:
     return {
         "id": linha["id_composicao_familiar"],
         "id_pessoa": linha["id_pessoa"],
         "nome": linha["nome"],
         "idade": texto_ou_none(linha["idade"]),
-        "grau_parentesco": linha["grau_parentesco"],
+        "grau_parentesco": normalizar_grau_parentesco(linha["grau_parentesco"]),
         "estado_civil": texto_ou_none(linha["estado_civil"]),
         "renda": texto_ou_none(linha["renda"]),
         "ocupacao": texto_ou_none(linha["ocupacao"]),

@@ -1,10 +1,12 @@
 from pydantic import BaseModel, ConfigDict
 
+from app.features.composicao_familiar.models import GrauParentesco
+
 
 class ComposicaoFamiliarBase(BaseModel):
     nome: str
     idade: str | None = None
-    grau_parentesco: str
+    grau_parentesco: GrauParentesco
     estado_civil: str | None = None
     renda: str | None = None
     ocupacao: str | None = None

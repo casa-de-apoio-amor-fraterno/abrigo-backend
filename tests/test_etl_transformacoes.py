@@ -5,9 +5,11 @@ from app.scripts.etl.transformacoes import (
     datetime_zerado_para_none,
     parse_contatos,
     parse_tempo_estadia,
+    normalizar_grau_parentesco,
     sim_nao_para_bool,
     texto_ou_none,
     transformar_avaliacao_social,
+    transformar_composicao_familiar,
     transformar_estadia,
     transformar_hospital,
     transformar_material,
@@ -65,6 +67,37 @@ def test_texto_ou_none():
     assert texto_ou_none("") is None
     assert texto_ou_none(None) is None
     assert texto_ou_none("APMI ") == "APMI "
+
+
+def test_normalizar_grau_parentesco_mapeia_variacao_real_pro_canonico():
+    # Mesmo mapeamento da migração 0023 — "genitora" e "espoosa" (erro de
+    # digitação) são variações reais vistas no dump de produção.
+    assert normalizar_grau_parentesco("genitora") == "Mãe"
+    assert normalizar_grau_parentesco("espoosa") == "Esposa"
+    assert normalizar_grau_parentesco("MARIDO") == "Esposo"
+    assert normalizar_grau_parentesco("  tia  ") == "Tia"
+
+
+def test_normalizar_grau_parentesco_nao_reconhecido_vira_outro():
+    assert normalizar_grau_parentesco("vizinho") == "Outro"
+    assert normalizar_grau_parentesco("qualquer coisa nao mapeada") == "Outro"
+    assert normalizar_grau_parentesco(None) == "Outro"
+    assert normalizar_grau_parentesco("") == "Outro"
+
+
+def test_transformar_composicao_familiar_normaliza_grau_parentesco():
+    linha = {
+        "id_composicao_familiar": 1,
+        "id_pessoa": 10,
+        "nome": "Fulano",
+        "idade": "40",
+        "grau_parentesco": "genitora",
+        "estado_civil": "Casado",
+        "renda": "1000",
+        "ocupacao": "Pedreiro",
+    }
+
+    assert transformar_composicao_familiar(linha)["grau_parentesco"] == "Mãe"
 
 
 def test_transformar_hospital():
