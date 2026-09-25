@@ -17,6 +17,7 @@ from app.features.estadias.schemas import (
     EstadiaUpdate,
 )
 from app.features.hospitais.models import Hospital
+from app.features.pessoas.models import Pessoa
 from app.features.quartos.models import Quarto
 
 # Rótulo em português de cada campo que entra no diff de "Alteração" do
@@ -108,6 +109,7 @@ def listar(
     id_pessoa: int | None = None,
     id_pessoa_acompanhante: int | None = None,
     situacao: SituacaoEstadia | None = None,
+    busca: str | None = None,
     skip: int = 0,
     take: int = 50,
 ) -> tuple[list[Estadia], int]:
@@ -124,6 +126,12 @@ def listar(
         consulta = consulta.where(Estadia.id_pessoa == id_pessoa)
     if situacao is not None:
         consulta = consulta.where(Estadia.situacao == situacao)
+    if busca:
+        # Nome da pessoa não está em Estadia — precisa do join só quando a
+        # busca é usada, pra não pesar a listagem padrão.
+        consulta = consulta.join(Pessoa, Pessoa.id == Estadia.id_pessoa).where(
+            Pessoa.nome.ilike(f"%{busca}%")
+        )
 
     total = db.scalar(select(func.count()).select_from(consulta.subquery())) or 0
     itens = db.scalars(

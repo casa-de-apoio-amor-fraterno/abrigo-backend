@@ -110,6 +110,30 @@ def test_listar_filtrado_por_situacao(client, db_session):
     assert corpo["items"][0]["situacao"] == "Devolvido"
 
 
+def test_listar_filtrado_por_busca_nome_pessoa(client, db_session):
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    outra_pessoa = Pessoa(nome="João Pereira", data_nascimento=date(1985, 3, 3), data_cadastro=date.today())
+    db_session.add(outra_pessoa)
+    db_session.commit()
+    db_session.refresh(outra_pessoa)
+
+    db_session.add_all(
+        [
+            Emprestimo(id_pessoa=deps["pessoa"].id, id_usuario=deps["usuario"].id, situacao="Pendente"),
+            Emprestimo(id_pessoa=outra_pessoa.id, id_usuario=deps["usuario"].id, situacao="Pendente"),
+        ]
+    )
+    db_session.commit()
+
+    resposta = client.get("/api/emprestimos", params={"busca": "maria"}, headers=headers)
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["total"] == 1
+    assert corpo["items"][0]["id_pessoa"] == deps["pessoa"].id
+
+
 def test_inativar_emprestimo(client, db_session):
     deps = _criar_dependencias(db_session)
     headers = _auth_header(deps["usuario"])

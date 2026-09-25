@@ -44,6 +44,26 @@ def test_listar_com_token_retorna_pendentes(client, usuario_legado):
     assert corpo["items"][0]["nome"] == "Ana Maria Bona"
 
 
+def test_listar_filtrado_por_busca(client, usuario_legado):
+    client.post(
+        "/api/solicitacoes-cadastro",
+        data={"nome": "Ana Maria Bona", "data_nascimento": "1990-01-01"},
+    )
+    client.post(
+        "/api/solicitacoes-cadastro",
+        data={"nome": "Carlos Pereira", "data_nascimento": "1985-05-05"},
+    )
+
+    resposta = client.get(
+        "/api/solicitacoes-cadastro", params={"busca": "ana maria"}, headers=_auth_header(usuario_legado)
+    )
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["total"] == 1
+    assert corpo["items"][0]["nome"] == "Ana Maria Bona"
+
+
 def test_aprovar_cria_pessoa_e_marca_situacao(client, db_session, usuario_legado):
     resposta = client.post(
         "/api/solicitacoes-cadastro",

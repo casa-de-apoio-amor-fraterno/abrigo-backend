@@ -148,6 +148,42 @@ def test_listar_filtrado_por_pessoa_acompanhante(client, db_session):
     assert resposta.json()["total"] == 0
 
 
+def test_listar_filtrado_por_busca_nome_pessoa(client, db_session):
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    outra_pessoa = Pessoa(nome="João Pereira", data_nascimento=date(1985, 3, 3), data_cadastro=date.today())
+    db_session.add(outra_pessoa)
+    db_session.commit()
+    db_session.refresh(outra_pessoa)
+
+    db_session.add_all(
+        [
+            Estadia(
+                id_pessoa=deps["pessoa"].id,
+                id_quarto=deps["quarto"].id,
+                id_usuario=deps["usuario"].id,
+                data_entrada=datetime(2026, 1, 1),
+                situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+            ),
+            Estadia(
+                id_pessoa=outra_pessoa.id,
+                id_quarto=deps["quarto"].id,
+                id_usuario=deps["usuario"].id,
+                data_entrada=datetime(2026, 1, 1),
+                situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    resposta = client.get("/api/estadias", params={"busca": "maria"}, headers=headers)
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["total"] == 1
+    assert corpo["items"][0]["id_pessoa"] == deps["pessoa"].id
+
+
 def test_listar_filtrado_por_situacao(client, db_session):
     deps = _criar_dependencias(db_session)
     headers = _auth_header(deps["usuario"])

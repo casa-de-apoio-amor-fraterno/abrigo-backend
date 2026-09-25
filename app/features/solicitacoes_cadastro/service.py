@@ -22,12 +22,18 @@ class SolicitacaoJaAnalisada(Exception):
 def listar(
     db: Session,
     situacao: SituacaoSolicitacaoCadastro | None = None,
+    busca: str | None = None,
     skip: int = 0,
     take: int = 50,
 ) -> tuple[list[SolicitacaoCadastroPaciente], int]:
     consulta = select(SolicitacaoCadastroPaciente)
     if situacao is not None:
         consulta = consulta.where(SolicitacaoCadastroPaciente.situacao == situacao)
+    if busca:
+        termo = f"%{busca}%"
+        consulta = consulta.where(
+            SolicitacaoCadastroPaciente.nome.ilike(termo) | SolicitacaoCadastroPaciente.cpf.ilike(termo)
+        )
 
     total = db.scalar(select(func.count()).select_from(consulta.subquery())) or 0
     itens = db.scalars(

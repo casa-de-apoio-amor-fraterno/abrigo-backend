@@ -96,6 +96,7 @@ def listar(
     db: Session,
     id_pessoa: int | None = None,
     situacao: str | None = None,
+    busca: str | None = None,
     skip: int = 0,
     take: int = 50,
 ) -> tuple[list[Emprestimo], int]:
@@ -104,6 +105,12 @@ def listar(
         consulta = consulta.where(Emprestimo.id_pessoa == id_pessoa)
     if situacao is not None:
         consulta = consulta.where(Emprestimo.situacao == situacao)
+    if busca:
+        # Nome da pessoa não está em Emprestimo — precisa do join só
+        # quando a busca é usada, pra não pesar a listagem padrão.
+        consulta = consulta.join(Pessoa, Pessoa.id == Emprestimo.id_pessoa).where(
+            Pessoa.nome.ilike(f"%{busca}%")
+        )
 
     total = db.scalar(select(func.count()).select_from(consulta.subquery())) or 0
     itens = db.scalars(consulta.order_by(Emprestimo.id.desc()).offset(skip).limit(take)).all()

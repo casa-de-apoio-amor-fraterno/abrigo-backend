@@ -24,6 +24,7 @@ def listar(
     id_pessoa: int | None = None,
     id_pessoa_acompanhante: int | None = None,
     situacao: SituacaoEstadia | None = None,
+    busca: str | None = None,
     skip: int = 0,
     take: int = 50,
     db: Session = Depends(get_db),
@@ -33,6 +34,7 @@ def listar(
         id_pessoa=id_pessoa,
         id_pessoa_acompanhante=id_pessoa_acompanhante,
         situacao=situacao,
+        busca=busca,
         skip=skip,
         take=take,
     )

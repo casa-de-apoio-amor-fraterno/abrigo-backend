@@ -21,6 +21,7 @@ router = APIRouter()
 @router.get("", dependencies=[Depends(usuario_atual)])
 def listar(
     situacao: SituacaoSolicitacaoCadastro | None = None,
+    busca: str | None = None,
     skip: int = 0,
     take: int = 50,
     db: Session = Depends(get_db),
@@ -28,7 +29,7 @@ def listar(
     # Listar/aprovar/revogar exige login (`usuario_atual`) — só a criação
     # (abaixo) é pública, pra ser possível pelo próprio celular do paciente
     # sem sessão nenhuma.
-    itens, total = service.listar(db, situacao=situacao, skip=skip, take=take)
+    itens, total = service.listar(db, situacao=situacao, busca=busca, skip=skip, take=take)
     return {
         "items": [SolicitacaoCadastroResumoResponse.model_validate(s) for s in itens],
         "total": total,

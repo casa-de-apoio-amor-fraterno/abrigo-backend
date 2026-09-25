@@ -29,11 +29,14 @@ router = APIRouter(dependencies=[Depends(usuario_atual)])
 def listar(
     id_pessoa: int | None = None,
     situacao: SituacaoEmprestimo | None = None,
+    busca: str | None = None,
     skip: int = 0,
     take: int = 50,
     db: Session = Depends(get_db),
 ) -> dict:
-    itens, total = service.listar(db, id_pessoa=id_pessoa, situacao=situacao, skip=skip, take=take)
+    itens, total = service.listar(
+        db, id_pessoa=id_pessoa, situacao=situacao, busca=busca, skip=skip, take=take
+    )
     return {"items": [EmprestimoResumoResponse.model_validate(e) for e in itens], "total": total}
 
 
