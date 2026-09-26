@@ -16,35 +16,35 @@ def _png_valido(cor: tuple[int, int, int] = (255, 0, 0), tamanho: tuple[int, int
     return buffer.getvalue()
 
 
-def _criar_material(client, headers: dict, descricao: str = "Cadeira de rodas") -> int:
+def _criar_material(client, headers: dict, id_local: int, descricao: str = "Cadeira de rodas") -> int:
     resposta = client.post(
         "/api/materiais",
-        json={"descricao": descricao, "situacao": "Disponível", "local": "Casa"},
+        json={"descricao": descricao, "situacao": "Disponível", "id_local": id_local},
         headers=headers,
     )
     return resposta.json()["id"]
 
 
-def test_material_sem_foto_tem_tem_foto_falso(client, usuario_legado):
+def test_material_sem_foto_tem_tem_foto_falso(client, usuario_legado, local_casa):
     headers = _auth_header(usuario_legado)
-    material_id = _criar_material(client, headers)
+    material_id = _criar_material(client, headers, local_casa.id)
 
     resposta = client.get(f"/api/materiais/{material_id}", headers=headers)
 
     assert resposta.json()["tem_foto"] is False
 
 
-def test_obter_foto_inexistente_retorna_404(client, usuario_legado):
+def test_obter_foto_inexistente_retorna_404(client, usuario_legado, local_casa):
     headers = _auth_header(usuario_legado)
-    material_id = _criar_material(client, headers)
+    material_id = _criar_material(client, headers, local_casa.id)
 
     assert client.get(f"/api/materiais/{material_id}/foto", headers=headers).status_code == 404
     assert client.get(f"/api/materiais/{material_id}/foto/thumb", headers=headers).status_code == 404
 
 
-def test_salvar_e_obter_foto_e_thumb(client, usuario_legado):
+def test_salvar_e_obter_foto_e_thumb(client, usuario_legado, local_casa):
     headers = _auth_header(usuario_legado)
-    material_id = _criar_material(client, headers)
+    material_id = _criar_material(client, headers, local_casa.id)
     conteudo = _png_valido()
 
     resposta = client.put(
@@ -70,9 +70,9 @@ def test_salvar_e_obter_foto_e_thumb(client, usuario_legado):
     assert thumb.height <= 200
 
 
-def test_salvar_foto_formato_nao_suportado(client, usuario_legado):
+def test_salvar_foto_formato_nao_suportado(client, usuario_legado, local_casa):
     headers = _auth_header(usuario_legado)
-    material_id = _criar_material(client, headers)
+    material_id = _criar_material(client, headers, local_casa.id)
 
     resposta = client.put(
         f"/api/materiais/{material_id}/foto",
@@ -83,11 +83,11 @@ def test_salvar_foto_formato_nao_suportado(client, usuario_legado):
     assert resposta.status_code == 400
 
 
-def test_salvar_foto_conteudo_nao_e_imagem_valida(client, usuario_legado):
+def test_salvar_foto_conteudo_nao_e_imagem_valida(client, usuario_legado, local_casa):
     """Content-type declarado bate com a whitelist, mas o conteúdo não é
     uma imagem de verdade (arquivo corrompido ou content-type forjado)."""
     headers = _auth_header(usuario_legado)
-    material_id = _criar_material(client, headers)
+    material_id = _criar_material(client, headers, local_casa.id)
 
     resposta = client.put(
         f"/api/materiais/{material_id}/foto",
@@ -98,9 +98,9 @@ def test_salvar_foto_conteudo_nao_e_imagem_valida(client, usuario_legado):
     assert resposta.status_code == 400
 
 
-def test_salvar_foto_maior_que_limite(client, usuario_legado):
+def test_salvar_foto_maior_que_limite(client, usuario_legado, local_casa):
     headers = _auth_header(usuario_legado)
-    material_id = _criar_material(client, headers)
+    material_id = _criar_material(client, headers, local_casa.id)
     conteudo_grande = b"a" * (5 * 1024 * 1024 + 1)
 
     resposta = client.put(
@@ -112,9 +112,9 @@ def test_salvar_foto_maior_que_limite(client, usuario_legado):
     assert resposta.status_code == 400
 
 
-def test_remover_foto(client, usuario_legado):
+def test_remover_foto(client, usuario_legado, local_casa):
     headers = _auth_header(usuario_legado)
-    material_id = _criar_material(client, headers)
+    material_id = _criar_material(client, headers, local_casa.id)
     client.put(
         f"/api/materiais/{material_id}/foto",
         files={"arquivo": ("foto.png", _png_valido(), "image/png")},

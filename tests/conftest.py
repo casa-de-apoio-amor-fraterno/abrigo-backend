@@ -7,6 +7,7 @@ from sqlalchemy.pool import StaticPool
 from app.core import rate_limit
 from app.core.database import Base, get_db
 from app.core.security import hash_senha
+from app.features.materiais_locais.models import MaterialLocal
 from app.features.usuarios.models import Usuario
 from app.main import app
 
@@ -64,6 +65,17 @@ def usuario_inativo(db_session) -> Usuario:
     db_session.commit()
     db_session.refresh(usuario)
     return usuario
+
+
+@pytest.fixture()
+def local_casa(db_session) -> MaterialLocal:
+    """`MaterialLocal` padrão usado nos testes de materiais/empréstimos —
+    equivalente ao "Casa" real (ver materiais_locais/models.py)."""
+    local = MaterialLocal(nome="Casa")
+    db_session.add(local)
+    db_session.commit()
+    db_session.refresh(local)
+    return local
 
 
 @pytest.fixture()

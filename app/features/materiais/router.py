@@ -7,6 +7,7 @@ from app.features.auth.dependencies import usuario_atual
 from app.features.materiais import service
 from app.features.materiais.schemas import (
     MaterialCreate,
+    MaterialInutilizarRequest,
     MaterialResponse,
     MaterialResumoResponse,
     MaterialUpdate,
@@ -60,6 +61,16 @@ def inativar(material_id: int, db: Session = Depends(get_db)) -> None:
     if material is None:
         raise HTTPException(status_code=404, detail="Material não encontrado")
     service.inativar(db, material)
+
+
+@router.post("/{material_id}/inutilizar", response_model=MaterialResponse)
+def inutilizar(
+    material_id: int, dados: MaterialInutilizarRequest, db: Session = Depends(get_db)
+) -> MaterialResponse:
+    material = service.buscar(db, material_id)
+    if material is None:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+    return MaterialResponse.model_validate(service.inutilizar(db, material, dados.motivo_baixa))
 
 
 @router.get("/{material_id}/foto")

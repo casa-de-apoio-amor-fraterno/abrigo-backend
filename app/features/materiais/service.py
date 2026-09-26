@@ -19,7 +19,7 @@ def listar(
     if busca:
         termo = f"%{busca}%"
         consulta = consulta.where(
-            or_(Material.descricao.ilike(termo), Material.codigo_identificacao.ilike(termo))
+            or_(Material.descricao.ilike(termo), Material.numero_patrimonio.ilike(termo))
         )
     if apenas_disponiveis_emprestimo:
         consulta = consulta.where(Material.disponivel_emprestimo.is_(True))
@@ -52,6 +52,19 @@ def atualizar(db: Session, material: Material, dados: MaterialUpdate) -> Materia
 def inativar(db: Session, material: Material) -> None:
     material.ativo = False
     db.commit()
+
+
+def inutilizar(db: Session, material: Material, motivo_baixa: str | None) -> Material:
+    """Marca o material como "Inutilizado" (situação fechada — ver
+    schemas.SituacaoMaterial), diferente de `inativar`: o material continua
+    aparecendo na listagem (só some da lista quem tem `ativo=False`), só
+    deixa de estar disponível pra alocação/empréstimo."""
+    material.situacao = "Inutilizado"
+    material.disponivel_emprestimo = False
+    material.motivo_baixa = motivo_baixa
+    db.commit()
+    db.refresh(material)
+    return material
 
 
 TIPOS_FOTO_PERMITIDOS = {"image/jpeg", "image/png", "image/webp"}

@@ -20,11 +20,11 @@ def test_listar_vazio(client, usuario_legado):
     assert resposta.json() == {"items": [], "total": 0}
 
 
-def test_listar_com_busca_por_descricao(client, db_session, usuario_legado):
+def test_listar_com_busca_por_descricao(client, db_session, usuario_legado, local_casa):
     db_session.add_all(
         [
-            Material(descricao="Cadeira de rodas", situacao="Disponível", local="Casa"),
-            Material(descricao="Muletas", situacao="Disponível", local="Casa"),
+            Material(descricao="Cadeira de rodas", situacao="Disponível", id_local=local_casa.id),
+            Material(descricao="Muletas", situacao="Disponível", id_local=local_casa.id),
         ]
     )
     db_session.commit()
@@ -39,16 +39,18 @@ def test_listar_com_busca_por_descricao(client, db_session, usuario_legado):
     assert corpo["items"][0]["descricao"] == "Cadeira de rodas"
 
 
-def test_listar_apenas_disponiveis_emprestimo(client, db_session, usuario_legado):
+def test_listar_apenas_disponiveis_emprestimo(client, db_session, usuario_legado, local_casa):
     db_session.add_all(
         [
             Material(
                 descricao="Cadeira de rodas",
                 situacao="Disponível",
-                local="Casa",
+                id_local=local_casa.id,
                 disponivel_emprestimo=True,
             ),
-            Material(descricao="Impressora", situacao="Disponível", local="Casa", disponivel_emprestimo=False),
+            Material(
+                descricao="Impressora", situacao="Disponível", id_local=local_casa.id, disponivel_emprestimo=False
+            ),
         ]
     )
     db_session.commit()
@@ -65,8 +67,8 @@ def test_listar_apenas_disponiveis_emprestimo(client, db_session, usuario_legado
     assert corpo["items"][0]["descricao"] == "Cadeira de rodas"
 
 
-def test_listar_nao_traz_inativo(client, db_session, usuario_legado):
-    db_session.add(Material(descricao="Baixado", situacao="Baixado", local="Casa", ativo=False))
+def test_listar_nao_traz_inativo(client, db_session, usuario_legado, local_casa):
+    db_session.add(Material(descricao="Inutilizado", situacao="Inutilizado", id_local=local_casa.id, ativo=False))
     db_session.commit()
 
     resposta = client.get("/api/materiais", headers=_auth_header(usuario_legado))
@@ -74,10 +76,10 @@ def test_listar_nao_traz_inativo(client, db_session, usuario_legado):
     assert resposta.json()["total"] == 0
 
 
-def test_listar_traz_ativo_nulo(client, db_session, usuario_legado):
+def test_listar_traz_ativo_nulo(client, db_session, usuario_legado, local_casa):
     """`ativo` é opcional no legado (DEFAULT NULL) — não deve ser tratado
     como inativo."""
-    material = Material(descricao="Sem status", situacao="Disponível", local="Casa")
+    material = Material(descricao="Sem status", situacao="Disponível", id_local=local_casa.id)
     material.ativo = None
     db_session.add(material)
     db_session.commit()
@@ -87,11 +89,11 @@ def test_listar_traz_ativo_nulo(client, db_session, usuario_legado):
     assert resposta.json()["total"] == 1
 
 
-def test_criar_e_buscar_material(client, usuario_legado):
+def test_criar_e_buscar_material(client, usuario_legado, local_casa):
     headers = _auth_header(usuario_legado)
     resposta = client.post(
         "/api/materiais",
-        json={"descricao": "Muletas", "situacao": "Disponível", "local": "Casa"},
+        json={"descricao": "Muletas", "situacao": "Disponível", "id_local": local_casa.id},
         headers=headers,
     )
     assert resposta.status_code == 201
@@ -102,11 +104,11 @@ def test_criar_e_buscar_material(client, usuario_legado):
     assert resposta.json()["descricao"] == "Muletas"
 
 
-def test_inativar_material(client, usuario_legado):
+def test_inativar_material(client, usuario_legado, local_casa):
     headers = _auth_header(usuario_legado)
     resposta = client.post(
         "/api/materiais",
-        json={"descricao": "Cama hospitalar", "situacao": "Disponível", "local": "Casa"},
+        json={"descricao": "Cama hospitalar", "situacao": "Disponível", "id_local": local_casa.id},
         headers=headers,
     )
     material_id = resposta.json()["id"]

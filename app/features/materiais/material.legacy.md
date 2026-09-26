@@ -10,19 +10,41 @@ Origem (Delphi — abrigo-legacy):
 `CREATE TABLE`/dados do dump de produção `sgf_abrigo`, 2026-09-10)
 
 `id_material` (int, PK, `AUTO_INCREMENT`), `descricao` (varchar(60),
-obrigatório), `codigo_identificacao` (varchar(60), opcional — código de
-patrimônio), `disponivel_emprestimo` (varchar(3) 'Sim'/'Não', obrigatório —
-modelado como `boolean`), `situacao` (varchar(60), obrigatório — **campo de
-texto livre** no legado, `TcxDBTextEdit`, não um combo/radio de valores
-fixos como `estadia.situacao`; dado real observado: `'Disponível'`,
-`'Baixado'`, mas sem lista fechada confirmada na UI — mantido como
-`String`, não enum), `local` (varchar(20), obrigatório — texto livre, ex.:
-`'Casa'`), `observacao` (text, opcional — no dado real usado como
+obrigatório), `numero_patrimonio` (varchar(60), opcional — coluna
+`codigo_identificacao` no legado, renomeada em 2026-09-25 pra refletir o
+que o campo realmente identifica: o número do patrimônio do item),
+`disponivel_emprestimo` (varchar(3) 'Sim'/'Não', obrigatório —
+modelado como `boolean`), `situacao` (varchar(60), obrigatório — **era
+campo de texto livre** no legado, `TcxDBTextEdit`, sem combo/radio de
+valores fixos como `estadia.situacao`; dado real observado: `'Disponível'`,
+`'Baixado'`, `'Emprestado'`). Decisão do time em 2026-09-26 fechou a lista
+(`app/features/materiais/schemas.SituacaoMaterial`, coluna continua
+`String`, validada só no Pydantic — mesmo padrão de `Emprestimo.situacao`):
+
+- `'Disponível'` — livre pra alocação ou empréstimo, em "Casa".
+- `'Alocado'` — disponibilizado em algum lugar do Abrigo ou da CAAF (ex.:
+  Bazar), fora de "Casa", mas ainda não emprestado a uma pessoa. Estado
+  novo, sem equivalente direto no legado (a migração 0026 reclassificou os
+  registros reais `'Disponível'` com `local` diferente de `'Casa'` pra
+  esse valor).
+- `'Emprestado'` — item emprestado a uma pessoa. Sincronizado
+  automaticamente pelo backend a partir da situação do
+  `EmprestimoItem` (ver `_sincronizar_situacao_material` em
+  `app/features/emprestimos/service.py`) — não é mais só digitado
+  manualmente.
+- `'Inutilizado'` — renomeado de `'Baixado'` (migração 0026) pra refletir
+  o nome que o time usa; sem volta automática (empréstimo/devolução nunca
+  sobrescreve um material inutilizado). Endpoint dedicado
+  `POST /materiais/{id}/inutilizar` (body opcional `motivo_baixa`), além
+  do `PUT` genérico.
+
+`local` (varchar(20), obrigatório — texto livre, ex.: `'Casa'`,
+`'Bazar'`), `observacao` (text, opcional — no dado real usado como
 descrição detalhada de origem/uso do item, texto longo com quebras de
 linha), `ativo` (varchar(3) 'Sim'/'Não', **opcional no legado** —
 `DEFAULT NULL`, mesmo padrão de `estadia.ativo`; modelado como `bool |
 None`), `motivo_baixa` (text, opcional — preenchido quando
-`situacao='Baixado'`, ex.: `'Queimou a placa.'`).
+`situacao='Inutilizado'`, ex.: `'Queimou a placa.'`).
 
 ~1.710 registros reais. CRUD completo (mesmo padrão de `pessoas`/
 `voluntarios`): busca por descrição/código, filtro

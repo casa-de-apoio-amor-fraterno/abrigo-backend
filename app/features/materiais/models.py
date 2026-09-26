@@ -1,4 +1,4 @@
-from sqlalchemy import LargeBinary, String, Text
+from sqlalchemy import ForeignKey, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -8,10 +8,16 @@ class Material(Base):
     """Mapeia a tabela `material` (schema confirmado no dump de produção
     `sgf_abrigo`, MySQL 5.5 — ver docs/migracao-postgres.md).
 
-    `situacao` é campo de texto livre no legado (`TcxDBTextEdit`, não um
-    combo com valores fixos — diferente de `estadia.situacao`) — mantido
-    como `String`, não enum. Dado real observado: 'Disponível', 'Baixado',
-    mas não há lista fechada de valores confirmada na UI.
+    `situacao` era campo de texto livre no legado (`TcxDBTextEdit`, sem
+    combo de valores fixos) — decisão do time em 2026-09-26 fechou a lista
+    (ver `schemas.SituacaoMaterial`): 'Disponível', 'Alocado', 'Emprestado',
+    'Inutilizado' (era 'Baixado', renomeado). Mantido como `String` na
+    coluna (não `Enum` do SQLAlchemy) — mesmo padrão de
+    `Emprestimo.situacao`, validado só no Pydantic.
+
+    `local` era texto livre (varchar(20)) — fechado numa tabela própria
+    (`MaterialLocal`) na mesma decisão de 2026-09-26, ver
+    `materiais_locais/models.py`.
 
     `foto`/`foto_thumb` são feature nova (sem equivalente no legado, sem
     dado real pra migrar) — mesmo padrão de `Pessoa.foto` (BLOB no próprio
@@ -24,10 +30,10 @@ class Material(Base):
 
     id: Mapped[int] = mapped_column("id_material", primary_key=True)
     descricao: Mapped[str] = mapped_column(String(60))
-    codigo_identificacao: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    numero_patrimonio: Mapped[str | None] = mapped_column(String(60), nullable=True)
     disponivel_emprestimo: Mapped[bool] = mapped_column(default=False)
     situacao: Mapped[str] = mapped_column(String(60))
-    local: Mapped[str] = mapped_column(String(20))
+    id_local: Mapped[int] = mapped_column(ForeignKey("material_local.id_material_local"))
     observacao: Mapped[str | None] = mapped_column(Text, nullable=True)
     ativo: Mapped[bool | None] = mapped_column(nullable=True, default=True)
     motivo_baixa: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -50,6 +50,7 @@ from app.features.estadias.models import Estadia, EstadiaAcompanhante
 from app.features.estados.models import Estado
 from app.features.hospitais.models import Hospital
 from app.features.materiais.models import Material
+from app.features.materiais_locais.models import MaterialLocal
 from app.features.municipios.models import Municipio
 from app.features.pessoas.models import Pessoa, PessoaContato
 from app.features.quartos.models import Quarto
@@ -152,6 +153,42 @@ def _carregar_contatos(
     return len(contatos)
 
 
+def _carregar_materiais(
+    conexao_origem, sessao_destino: Session, confirmar: bool
+) -> int:
+    """`material.local` virou uma FK pra `material_local` (id+nome, ver
+    materiais_locais/models.py — decisão do time, 2026-09-26), então
+    `material` não pode mais usar `_carregar_tabela` genérico: precisa
+    seedar `material_local` com os nomes distintos ANTES, e resolver cada
+    linha de `local` (texto) pro `id_local` correspondente."""
+    linhas = _ler_tabela(conexao_origem, "material")
+    transformadas = [t.transformar_material(linha) for linha in linhas]
+
+    nomes_local = sorted({linha["local"] for linha in transformadas})
+    locais = [{"nome": nome} for nome in nomes_local]
+    print(f"  material.local -> material_local: {len(locais)} local(is) distinto(s)")
+
+    if confirmar and locais:
+        sessao_destino.bulk_insert_mappings(MaterialLocal, locais)
+        sessao_destino.commit()
+        _resincronizar_sequencia(sessao_destino, MaterialLocal)
+
+    id_por_nome = {
+        local.nome: local.id for local in sessao_destino.query(MaterialLocal).all()
+    }
+    for linha in transformadas:
+        linha["id_local"] = id_por_nome.get(linha.pop("local"))
+
+    print(f"  material -> material: {len(transformadas)} linha(s)")
+
+    if confirmar and transformadas:
+        sessao_destino.bulk_insert_mappings(Material, transformadas)
+        sessao_destino.commit()
+        _resincronizar_sequencia(sessao_destino, Material)
+
+    return len(transformadas)
+
+
 def _reconciliar_acompanhamento(
     conexao_origem, sessao_destino: Session, confirmar: bool
 ) -> None:
@@ -212,7 +249,6 @@ TABELAS_SIMPLES: list[tuple[str, Callable[[dict], dict], type[Base]]] = [
     ("usuario", t.transformar_usuario, Usuario),
     ("quarto", t.transformar_quarto, Quarto),
     ("voluntario", t.transformar_voluntario, Voluntario),
-    ("material", t.transformar_material, Material),
     ("municipio", t.transformar_municipio, Municipio),
     ("pessoa", t.transformar_pessoa, Pessoa),
     ("estadia", t.transformar_estadia, Estadia),
@@ -231,6 +267,13 @@ def executar(mysql_url: str, confirmar: bool) -> None:
     try:
         with engine_origem.connect() as conexao_origem:
             print("Carregando tabelas (ordem respeita as FKs — ver docs/atividades.md):")
+
+            # Fora de TABELAS_SIMPLES: precisa seedar `material_local` a
+            # partir dos nomes distintos de `material.local` (texto) antes
+            # de inserir `material` (ver `_carregar_materiais`) — a mesma
+            # linha origina duas tabelas destino.
+            _carregar_materiais(conexao_origem, sessao_destino, confirmar)
+
             for tabela_origem, transformar, modelo_destino in TABELAS_SIMPLES:
                 _carregar_tabela(
                     conexao_origem, sessao_destino, tabela_origem, transformar, modelo_destino, confirmar

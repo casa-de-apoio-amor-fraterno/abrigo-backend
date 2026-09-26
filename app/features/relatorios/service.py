@@ -13,6 +13,7 @@ from app.features.estadias.models import Estadia, SituacaoEstadia, TipoPessoaEst
 from app.features.estados.models import Estado
 from app.features.hospitais.models import Hospital
 from app.features.materiais.models import Material
+from app.features.materiais_locais.models import MaterialLocal
 from app.features.municipios.models import Municipio
 from app.features.pessoas.models import Pessoa
 from app.features.quartos.models import Quarto
@@ -204,13 +205,14 @@ def gerar_pdf_materiais(db: Session) -> bytes:
     materiais = list(
         db.scalars(select(Material).where(Material.ativo.is_(True)).order_by(Material.descricao)).all()
     )
+    nomes_local = {l.id: l.nome for l in db.scalars(select(MaterialLocal)).all()}
 
     linhas = [
         [
             str(material.id),
-            material.codigo_identificacao or "-",
+            material.numero_patrimonio or "-",
             material.descricao,
-            material.local,
+            nomes_local.get(material.id_local, "-"),
             material.situacao,
             "Sim" if material.disponivel_emprestimo else "Não",
             _truncar(material.motivo_baixa),
@@ -221,17 +223,17 @@ def gerar_pdf_materiais(db: Session) -> bytes:
     pdf = DocumentoPDF(rodape=_RODAPE, orientation="L")
     pdf.titulo_documento(f"RELATÓRIO DE MATERIAIS\n{_gerado_em()}")
     pdf.tabela_relatorio(
-        ["Cód.", "Cód. Identificação", "Descrição", "Local", "Situação", "Disp. Empréstimo", "Motivo baixa"],
+        ["Cód.", "Nº Patrimônio", "Descrição", "Local", "Situação", "Disp. Empréstimo", "Motivo baixa"],
         linhas,
         larguras=[8, 15, 30, 10, 12, 12, 23],
     )
     total_disponiveis = sum(1 for m in materiais if m.disponivel_emprestimo)
-    total_baixados = sum(1 for m in materiais if m.situacao == "Baixado")
+    total_inutilizados = sum(1 for m in materiais if m.situacao == "Inutilizado")
     pdf.totais(
         [
             f"Total de materiais: {len(materiais)}",
             f"Total disponíveis: {total_disponiveis}",
-            f"Total baixados: {total_baixados}",
+            f"Total inutilizados: {total_inutilizados}",
         ]
     )
     return pdf.gerar_bytes()
@@ -345,13 +347,15 @@ def resumo_materiais(db: Session) -> list[RelatorioResumoItem]:
         .select_from(Material)
         .where(Material.ativo.is_(True), Material.disponivel_emprestimo.is_(True))
     )
-    baixados = db.scalar(
-        select(func.count()).select_from(Material).where(Material.ativo.is_(True), Material.situacao == "Baixado")
+    inutilizados = db.scalar(
+        select(func.count())
+        .select_from(Material)
+        .where(Material.ativo.is_(True), Material.situacao == "Inutilizado")
     )
     return [
         RelatorioResumoItem(rotulo="Total de materiais", valor=str(total or 0)),
         RelatorioResumoItem(rotulo="Disponíveis para empréstimo", valor=str(disponiveis or 0)),
-        RelatorioResumoItem(rotulo="Baixados", valor=str(baixados or 0)),
+        RelatorioResumoItem(rotulo="Inutilizados", valor=str(inutilizados or 0)),
     ]
 
 

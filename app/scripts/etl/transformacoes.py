@@ -271,13 +271,27 @@ def transformar_voluntario(linha: dict) -> dict:
 
 
 def transformar_material(linha: dict) -> dict:
+    # Situação fechada em 2026-09-26 (ver app/features/materiais/schemas.py,
+    # SituacaoMaterial) — mesma regra de conversão da migração Alembic 0026,
+    # aplicada aqui pra quem reimportar do legado depois dessa mudança.
+    # "local" continua textual: `_carregar_materiais`, em etl_migracao.py,
+    # resolve pro `id_local` (FK) depois de seedar `material_local`.
+    situacao_legado = linha["situacao"]
+    local_legado = linha["local"]
+    if situacao_legado == "Baixado":
+        situacao = "Inutilizado"
+    elif situacao_legado == "Disponível" and local_legado != "Casa":
+        situacao = "Alocado"
+    else:
+        situacao = situacao_legado
+
     return {
         "id": linha["id_material"],
         "descricao": linha["descricao"],
-        "codigo_identificacao": texto_ou_none(linha["codigo_identificacao"]),
+        "numero_patrimonio": texto_ou_none(linha["codigo_identificacao"]),
         "disponivel_emprestimo": sim_nao_para_bool(linha["disponivel_emprestimo"]) or False,
-        "situacao": linha["situacao"],
-        "local": linha["local"],
+        "situacao": situacao,
+        "local": local_legado,
         "observacao": texto_ou_none(linha["observacao"]),
         "ativo": sim_nao_para_bool(linha["ativo"]),
         "motivo_baixa": texto_ou_none(linha["motivo_baixa"]),

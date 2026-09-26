@@ -16,6 +16,7 @@ from app.features.estadias.router import router as estadias_router
 from app.features.estados.router import router as estados_router
 from app.features.hospitais.router import router as hospitais_router
 from app.features.materiais.router import router as materiais_router
+from app.features.materiais_locais.router import router as materiais_locais_router
 from app.features.municipios.router import router as municipios_router
 from app.features.pessoas.router import router as pessoas_router
 from app.features.quartos.router import router as quartos_router
@@ -58,6 +59,7 @@ app.include_router(quartos_router, prefix="/api/quartos", tags=["quartos"])
 app.include_router(estadias_router, prefix="/api/estadias", tags=["estadias"])
 app.include_router(voluntarios_router, prefix="/api/voluntarios", tags=["voluntarios"])
 app.include_router(materiais_router, prefix="/api/materiais", tags=["materiais"])
+app.include_router(materiais_locais_router, prefix="/api/materiais-locais", tags=["materiais-locais"])
 app.include_router(emprestimos_router, prefix="/api/emprestimos", tags=["emprestimos"])
 app.include_router(relatorios_router, prefix="/api/relatorios", tags=["relatorios"])
 app.include_router(
