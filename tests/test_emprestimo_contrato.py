@@ -7,6 +7,7 @@ from PIL import Image
 from app.core.security import criar_token_acesso
 from app.features.emprestimos.models import Emprestimo
 from app.features.materiais.models import Material
+from app.features.materiais_locais.models import MaterialLocal
 from app.features.pessoas.models import Pessoa
 from app.features.usuarios.models import Usuario
 
@@ -25,8 +26,13 @@ def _assinatura_base64() -> str:
 def _criar_emprestimo(db_session) -> tuple[Emprestimo, Usuario]:
     pessoa = Pessoa(nome="Maria da Silva", cpf="11122233344", data_nascimento=date(1990, 1, 1), data_cadastro=date.today())
     usuario = Usuario(login="joana", nome="Joana Assistente", perfil="Geral", senha="123456")
-    material = Material(descricao="Cadeira de rodas", situacao="Disponível", local="Casa", disponivel_emprestimo=True)
-    db_session.add_all([pessoa, usuario, material])
+    local_casa = MaterialLocal(nome="Casa")
+    db_session.add_all([pessoa, usuario, local_casa])
+    db_session.commit()
+    material = Material(
+        descricao="Cadeira de rodas", situacao="Disponível", id_local=local_casa.id, disponivel_emprestimo=True
+    )
+    db_session.add(material)
     db_session.commit()
     db_session.refresh(pessoa)
     db_session.refresh(usuario)
@@ -63,11 +69,16 @@ def test_assinar_contrato_gera_pdf(client, db_session):
     corpo = resposta.json()
     assert corpo["id_emprestimo"] == emprestimo.id
     assert corpo["id_usuario"] == usuario.id
+    assert corpo["tipo"] == "Comodato"
+    contrato_id = corpo["id"]
 
-    resposta = client.get(f"/api/emprestimos/{emprestimo.id}/contrato", headers=_auth_header(usuario))
+    resposta = client.get(f"/api/emprestimos/{emprestimo.id}/contratos", headers=_auth_header(usuario))
     assert resposta.status_code == 200
+    assert len(resposta.json()) == 1
 
-    resposta = client.get(f"/api/emprestimos/{emprestimo.id}/contrato/pdf", headers=_auth_header(usuario))
+    resposta = client.get(
+        f"/api/emprestimos/{emprestimo.id}/contratos/{contrato_id}/pdf", headers=_auth_header(usuario)
+    )
     assert resposta.status_code == 200
     assert resposta.headers["content-type"] == "application/pdf"
     assert resposta.content.startswith(b"%PDF-")
@@ -110,7 +121,7 @@ def test_contrato_de_emprestimo_inexistente_retorna_404(client, db_session):
     db_session.commit()
     db_session.refresh(usuario)
 
-    resposta = client.get("/api/emprestimos/999/contrato", headers=_auth_header(usuario))
+    resposta = client.get("/api/emprestimos/999/contratos", headers=_auth_header(usuario))
     assert resposta.status_code == 404
 
     resposta = client.post(
@@ -121,9 +132,53 @@ def test_contrato_de_emprestimo_inexistente_retorna_404(client, db_session):
     assert resposta.status_code == 404
 
 
-def test_buscar_contrato_antes_de_assinar_retorna_404(client, db_session):
+def test_listar_contratos_antes_de_assinar_retorna_lista_vazia(client, db_session):
     emprestimo, usuario = _criar_emprestimo(db_session)
 
-    resposta = client.get(f"/api/emprestimos/{emprestimo.id}/contrato", headers=_auth_header(usuario))
+    resposta = client.get(f"/api/emprestimos/{emprestimo.id}/contratos", headers=_auth_header(usuario))
 
-    assert resposta.status_code == 404
+    assert resposta.status_code == 200
+    assert resposta.json() == []
+
+
+def test_assinar_renovacao_sem_comodato_retorna_409(client, db_session):
+    emprestimo, usuario = _criar_emprestimo(db_session)
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo.id}/contrato",
+        json={"assinatura_png_base64": _assinatura_base64(), "tipo": "Renovação"},
+        headers=_auth_header(usuario),
+    )
+
+    assert resposta.status_code == 409
+
+
+def test_assinar_multiplas_renovacoes(client, db_session):
+    emprestimo, usuario = _criar_emprestimo(db_session)
+    headers = _auth_header(usuario)
+
+    client.post(
+        f"/api/emprestimos/{emprestimo.id}/contrato",
+        json={"assinatura_png_base64": _assinatura_base64()},
+        headers=headers,
+    )
+
+    for _ in range(2):
+        resposta = client.post(
+            f"/api/emprestimos/{emprestimo.id}/contrato",
+            json={"assinatura_png_base64": _assinatura_base64(), "tipo": "Renovação"},
+            headers=headers,
+        )
+        assert resposta.status_code == 201
+        assert resposta.json()["tipo"] == "Renovação"
+
+    resposta = client.get(f"/api/emprestimos/{emprestimo.id}/contratos", headers=headers)
+    tipos = [c["tipo"] for c in resposta.json()]
+    assert tipos == ["Comodato", "Renovação", "Renovação"]
+
+    for contrato in resposta.json():
+        pdf = client.get(
+            f"/api/emprestimos/{emprestimo.id}/contratos/{contrato['id']}/pdf", headers=headers
+        )
+        assert pdf.status_code == 200
+        assert pdf.content.startswith(b"%PDF-")

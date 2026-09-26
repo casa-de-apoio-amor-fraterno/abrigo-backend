@@ -99,9 +99,12 @@ class EmprestimoContrato(Base):
     livre; o termo em si, se existia, era feito em papel fora do sistema —
     ver `emprestimo.legacy.md`).
 
-    Um empréstimo tem no máximo um contrato (`id_emprestimo` é `unique`) —
-    decisão do usuário: assina uma vez, na criação do empréstimo;
-    renovação/alteração de item não gera novo termo.
+    Um empréstimo pode ter vários contratos (`tipo` distingue qual é qual —
+    ver `schemas.TipoContrato`): no máximo um "Comodato" (o termo original,
+    assinado uma vez na criação do empréstimo) e quantos "Renovação"
+    forem necessários (um termo aditivo a cada vez que o prazo é
+    prorrogado — decisão do time, 2026-09-26, revertendo a regra anterior
+    de "no máximo um contrato por empréstimo").
 
     `pdf` é o documento **assinado, congelado no momento da assinatura**
     (decisão do usuário: igual a um papel assinado, editar o empréstimo
@@ -115,10 +118,9 @@ class EmprestimoContrato(Base):
     __tablename__ = "emprestimo_contrato"
 
     id: Mapped[int] = mapped_column("id_emprestimo_contrato", primary_key=True)
-    id_emprestimo: Mapped[int] = mapped_column(
-        ForeignKey("emprestimo.id_emprestimo"), unique=True
-    )
+    id_emprestimo: Mapped[int] = mapped_column(ForeignKey("emprestimo.id_emprestimo"))
     id_usuario: Mapped[int] = mapped_column(ForeignKey("usuario.id_usuario"))
+    tipo: Mapped[str] = mapped_column(String(20), default="Comodato")
     assinatura: Mapped[bytes] = mapped_column(LargeBinary)
     pdf: Mapped[bytes] = mapped_column(LargeBinary)
     data_assinatura: Mapped[datetime] = mapped_column(DateTime)

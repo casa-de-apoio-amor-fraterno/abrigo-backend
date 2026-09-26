@@ -3,6 +3,7 @@ from datetime import date
 from app.core.security import criar_token_acesso
 from app.features.emprestimos.models import Emprestimo
 from app.features.materiais.models import Material
+from app.features.materiais_locais.models import MaterialLocal
 from app.features.pessoas.models import Pessoa
 from app.features.usuarios.models import Usuario
 
@@ -15,13 +16,18 @@ def _auth_header(usuario) -> dict:
 def _criar_dependencias(db_session) -> dict:
     pessoa = Pessoa(nome="Maria da Silva", data_nascimento=date(1990, 1, 1), data_cadastro=date.today())
     usuario = Usuario(login="joana", nome="Joana", perfil="geral", senha="123456")
-    material = Material(descricao="Cadeira de rodas", situacao="Disponível", local="Casa", disponivel_emprestimo=True)
-    db_session.add_all([pessoa, usuario, material])
+    local_casa = MaterialLocal(nome="Casa")
+    db_session.add_all([pessoa, usuario, local_casa])
+    db_session.commit()
+    material = Material(
+        descricao="Cadeira de rodas", situacao="Disponível", id_local=local_casa.id, disponivel_emprestimo=True
+    )
+    db_session.add(material)
     db_session.commit()
     db_session.refresh(pessoa)
     db_session.refresh(usuario)
     db_session.refresh(material)
-    return {"pessoa": pessoa, "usuario": usuario, "material": material}
+    return {"pessoa": pessoa, "usuario": usuario, "material": material, "local_casa": local_casa}
 
 
 def test_listar_exige_login(client):
@@ -179,6 +185,123 @@ def test_adicionar_e_listar_item(client, db_session):
     corpo = resposta.json()
     assert len(corpo) == 1
     assert corpo[0]["id"] == item_id
+
+
+def test_rejeita_material_duplicado_no_mesmo_emprestimo(client, db_session):
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    resposta = client.post(
+        "/api/emprestimos",
+        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        headers=headers,
+    )
+    emprestimo_id = resposta.json()["id"]
+
+    client.post(
+        f"/api/emprestimos/{emprestimo_id}/itens",
+        json={"id_material": deps["material"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        headers=headers,
+    )
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/itens",
+        json={"id_material": deps["material"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 409
+    assert "já está incluído" in resposta.json()["detail"]
+
+    resposta = client.get(f"/api/emprestimos/{emprestimo_id}/itens", headers=headers)
+    assert len(resposta.json()) == 1
+
+
+def test_rejeita_material_duplicado_na_criacao_com_itens_aninhados(client, db_session):
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+
+    resposta = client.post(
+        "/api/emprestimos",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+            "itens": [
+                {"id_material": deps["material"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+                {"id_material": deps["material"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+            ],
+        },
+        headers=headers,
+    )
+
+    assert resposta.status_code == 409
+    assert "já está incluído" in resposta.json()["detail"]
+
+
+def test_permite_reincluir_material_ja_devolvido_no_mesmo_emprestimo(client, db_session):
+    # Um item "Devolvido" não bloqueia reincluir o mesmo material — o
+    # empréstimo anterior daquele item já terminou.
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    resposta = client.post(
+        "/api/emprestimos",
+        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        headers=headers,
+    )
+    emprestimo_id = resposta.json()["id"]
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/itens",
+        json={"id_material": deps["material"].id, "id_usuario": deps["usuario"].id, "situacao": "Devolvido"},
+        headers=headers,
+    )
+    assert resposta.status_code == 201
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/itens",
+        json={"id_material": deps["material"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        headers=headers,
+    )
+    assert resposta.status_code == 201
+
+
+def test_rejeita_material_duplicado_ao_atualizar_item(client, db_session):
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    outro_material = Material(
+        descricao="Muleta", situacao="Disponível", id_local=deps["local_casa"].id, disponivel_emprestimo=True
+    )
+    db_session.add(outro_material)
+    db_session.commit()
+    db_session.refresh(outro_material)
+
+    resposta = client.post(
+        "/api/emprestimos",
+        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        headers=headers,
+    )
+    emprestimo_id = resposta.json()["id"]
+
+    client.post(
+        f"/api/emprestimos/{emprestimo_id}/itens",
+        json={"id_material": deps["material"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        headers=headers,
+    )
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/itens",
+        json={"id_material": outro_material.id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        headers=headers,
+    )
+    item_id = resposta.json()["id"]
+
+    # Tenta editar o item da muleta pra apontar pro material já usado pelo outro item.
+    resposta = client.put(
+        f"/api/emprestimos/{emprestimo_id}/itens/{item_id}",
+        json={"id_material": deps["material"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 409
 
 
 def test_rejeita_situacao_invalida_no_item(client, db_session):
@@ -513,7 +636,7 @@ def test_devolver_marca_emprestimo_itens_e_libera_material(client, db_session):
 
     material = client.get(f"/api/materiais/{deps['material'].id}", headers=headers).json()
     assert material["situacao"] == "Disponível"
-    assert material["local"] == "Casa"
+    assert material["id_local"] == deps["local_casa"].id
     assert material["disponivel_emprestimo"] is True
 
     historico = client.get(f"/api/emprestimos/{emprestimo_id}/historico", headers=headers).json()
@@ -579,10 +702,10 @@ def test_devolver_emprestimo_sem_itens_mantem_pendente(client, db_session):
     assert resposta.json()["situacao"] == "Pendente"
 
 
-def test_devolver_nao_reativa_material_ja_baixado(client, db_session):
+def test_devolver_nao_reativa_material_ja_inutilizado(client, db_session):
     deps = _criar_dependencias(db_session)
     headers = _auth_header(deps["usuario"])
-    deps["material"].situacao = "Baixado"
+    deps["material"].situacao = "Inutilizado"
     db_session.commit()
 
     resposta = client.post(
@@ -610,7 +733,7 @@ def test_devolver_nao_reativa_material_ja_baixado(client, db_session):
     )
 
     material = client.get(f"/api/materiais/{deps['material'].id}", headers=headers).json()
-    assert material["situacao"] == "Baixado"
+    assert material["situacao"] == "Inutilizado"
 
 
 def test_devolver_ignora_itens_ja_devolvidos(client, db_session):
@@ -685,7 +808,7 @@ def test_situacao_cabecalho_prioriza_renovado_sobre_pendente_e_devolvido(client,
     deps = _criar_dependencias(db_session)
     headers = _auth_header(deps["usuario"])
     outro_material = Material(
-        descricao="Muleta", situacao="Disponível", local="Casa", disponivel_emprestimo=True
+        descricao="Muleta", situacao="Disponível", id_local=deps["local_casa"].id, disponivel_emprestimo=True
     )
     db_session.add(outro_material)
     db_session.commit()
@@ -775,3 +898,131 @@ def test_atualizar_item_registra_historico(client, db_session):
     resposta = client.get(f"/api/emprestimos/{emprestimo_id}/historico", headers=headers)
     item_alterado = next(h for h in resposta.json() if h["tipo"] == "Item alterado")
     assert "situação: Devolvido" in item_alterado["observacao"]
+
+
+def test_alertas_vencimento_exige_login(client):
+    resposta = client.get("/api/emprestimos/alertas-vencimento")
+
+    assert resposta.status_code == 401
+
+
+def test_alertas_vencimento_lista_itens_dentro_do_horizonte(client, db_session):
+    from datetime import timedelta
+
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+
+    resposta = client.post(
+        "/api/emprestimos",
+        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        headers=headers,
+    )
+    emprestimo_id = resposta.json()["id"]
+
+    vence_em_5_dias = (date.today() + timedelta(days=5)).isoformat()
+    client.post(
+        f"/api/emprestimos/{emprestimo_id}/itens",
+        json={
+            "id_material": deps["material"].id,
+            "id_usuario": deps["usuario"].id,
+            "data_devolucao": vence_em_5_dias,
+            "situacao": "Pendente",
+        },
+        headers=headers,
+    )
+
+    resposta = client.get("/api/emprestimos/alertas-vencimento", headers=headers)
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert len(corpo) == 1
+    assert corpo[0]["id_emprestimo"] == emprestimo_id
+    assert corpo[0]["nome_pessoa"] == deps["pessoa"].nome
+    assert corpo[0]["descricao_material"] == deps["material"].descricao
+    assert corpo[0]["dias_restantes"] == 5
+
+
+def test_alertas_vencimento_inclui_vencidos_com_dias_negativos(client, db_session):
+    from datetime import timedelta
+
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+
+    resposta = client.post(
+        "/api/emprestimos",
+        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        headers=headers,
+    )
+    emprestimo_id = resposta.json()["id"]
+
+    venceu_ha_3_dias = (date.today() - timedelta(days=3)).isoformat()
+    client.post(
+        f"/api/emprestimos/{emprestimo_id}/itens",
+        json={
+            "id_material": deps["material"].id,
+            "id_usuario": deps["usuario"].id,
+            "data_devolucao": venceu_ha_3_dias,
+            "situacao": "Pendente",
+        },
+        headers=headers,
+    )
+
+    resposta = client.get("/api/emprestimos/alertas-vencimento", headers=headers)
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert len(corpo) == 1
+    assert corpo[0]["dias_restantes"] == -3
+
+
+def test_alertas_vencimento_ignora_itens_devolvidos_e_fora_do_horizonte(client, db_session):
+    from datetime import timedelta
+
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+
+    resposta = client.post(
+        "/api/emprestimos",
+        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        headers=headers,
+    )
+    emprestimo_id = resposta.json()["id"]
+
+    longe = (date.today() + timedelta(days=30)).isoformat()
+    client.post(
+        f"/api/emprestimos/{emprestimo_id}/itens",
+        json={
+            "id_material": deps["material"].id,
+            "id_usuario": deps["usuario"].id,
+            "data_devolucao": longe,
+            "situacao": "Pendente",
+        },
+        headers=headers,
+    )
+
+    outro_material = Material(
+        descricao="Muleta",
+        situacao="Disponível",
+        id_local=deps["local_casa"].id,
+        disponivel_emprestimo=True,
+    )
+    db_session.add(outro_material)
+    db_session.commit()
+    db_session.refresh(outro_material)
+
+    perto = (date.today() + timedelta(days=2)).isoformat()
+    client.post(
+        f"/api/emprestimos/{emprestimo_id}/itens",
+        json={
+            "id_material": outro_material.id,
+            "id_usuario": deps["usuario"].id,
+            "data_devolucao": perto,
+            "situacao": "Devolvido",
+        },
+        headers=headers,
+    )
+
+    resposta = client.get("/api/emprestimos/alertas-vencimento", headers=headers)
+
+    assert resposta.status_code == 200
+    assert resposta.json() == []

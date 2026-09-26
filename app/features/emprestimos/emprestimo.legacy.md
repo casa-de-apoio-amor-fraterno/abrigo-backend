@@ -137,14 +137,21 @@ Decisões confirmadas com o usuário (2026-09-14):
   exemplo nº 391/2026) — substituiu o rascunho genérico anterior. Campos
   dinâmicos: beneficiário/responsável (nome, CPF, endereço, telefone —
   `Pessoa`), item(ns) emprestado(s) (`Material.descricao` +
-  `codigo_identificacao`) e prazo de vigência (min/max de
+  `numero_patrimonio`) e prazo de vigência (min/max de
   `EmprestimoItem.data_emprestimo`/`data_devolucao` entre os itens do
   empréstimo). Tabela de taxas (cláusula 5), endereço/CNPJ da entidade,
   rodapé e demais cláusulas são fixos, copiados do modelo. Logo real em
   `app/shared/assets/logo-caaf.png`.
-- **Um contrato por empréstimo** (`EmprestimoContrato.id_emprestimo` é
-  `unique`) — assina uma vez; renovação/alteração de item não gera novo
-  termo. Tentar assinar de novo retorna 409.
+- **Vários contratos por empréstimo, distinguidos por `tipo`** (mudou em
+  2026-09-26, migração `0028`; regra original era "um contrato por
+  empréstimo", `id_emprestimo` `unique`). `tipo="Comodato"` é o termo
+  original — continua único, tentar assinar um segundo retorna 409. Além
+  dele, agora dá pra assinar quantos `tipo="Renovação"` forem necessários
+  (um termo aditivo a cada prorrogação de prazo — ver
+  `_gerar_pdf_termo_renovacao`, texto próprio, bem mais curto que o
+  comodato, sem modelo cedido pela CAAF pra esse caso — decisão de
+  produto). Assinar uma "Renovação" sem ter o "Comodato" ainda retorna 409
+  (`RenovacaoSemContratoOriginal`).
 - **PDF congelado no momento da assinatura**: os bytes do PDF já assinado
   ficam salvos em `EmprestimoContrato.pdf` (igual a um papel assinado);
   editar o empréstimo depois (ex. observação) não altera o documento já
@@ -152,18 +159,21 @@ Decisões confirmadas com o usuário (2026-09-14):
 
 Endpoints (`router.py`, todos exigindo login — `usuario_atual`, diferente
 do resto do CRUD de `emprestimos` que hoje não exige nada, gap conhecido):
-`POST /emprestimos/{id}/contrato` (recebe a assinatura em PNG base64, ver
-`app/shared/imagem.decodificar_base64_imagem` — aceita data URL ou base64
-cru; gera e persiste o PDF via `app/shared/pdf.DocumentoPDF`), `GET
-/emprestimos/{id}/contrato` (metadados) e `GET
-/emprestimos/{id}/contrato/pdf` (bytes do PDF). Registra
-`EmprestimoHistorico` (`tipo='Contrato assinado'`) — mesmo padrão de
+`POST /emprestimos/{id}/contrato` (recebe a assinatura em PNG base64 +
+`tipo`, ver `app/shared/imagem.decodificar_base64_imagem` — aceita data
+URL ou base64 cru; gera e persiste o PDF via `app/shared/pdf.DocumentoPDF`),
+`GET /emprestimos/{id}/contratos` (lista todos, metadados) e `GET
+/emprestimos/{id}/contratos/{contrato_id}/pdf` (bytes de um PDF
+específico — os endpoints singulares `/contrato`/`/contrato/pdf` da regra
+antiga foram removidos). Registra `EmprestimoHistorico`
+(`tipo='Contrato assinado'` ou `'Renovação assinada'`) — mesmo padrão de
 auditoria já usado pro resto do empréstimo.
 
-Migração `0022_emprestimo_contrato`. Protótipo anterior do fluxo de
-assinatura (canvas em tela cheia no frontend, endpoint descartável
-`/api/contrato-demo`) documentado nas mensagens do projeto — este é o
-primeiro uso real, ligado a uma entidade de verdade.
+Migração `0022_emprestimo_contrato` (criação) / `0028` (tipo + múltiplos
+contratos). Protótipo anterior do fluxo de assinatura (canvas em tela
+cheia no frontend, endpoint descartável `/api/contrato-demo`) documentado
+nas mensagens do projeto — este é o primeiro uso real, ligado a uma
+entidade de verdade.
 
 ## Status
 Mapeado e implementado (CRUD completo + sub-recurso de itens + histórico

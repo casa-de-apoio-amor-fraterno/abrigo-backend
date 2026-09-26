@@ -55,10 +55,12 @@ class EmprestimoItemResponse(EmprestimoItemBase):
     # ao contrário de `data_devolucao` (prevista, digitada manualmente).
     data_devolucao_efetiva: date | None
     # Anexados pelo service a partir de `Material` (não são colunas de
-    # `emprestimo_item`) — usados pelo front pra mostrar descrição e
-    # miniatura do material no popover de devolução, sem round-trip extra.
+    # `emprestimo_item`) — usados pelo front pra mostrar descrição,
+    # miniatura e número do patrimônio do material na listagem de itens,
+    # sem round-trip extra.
     descricao_material: str
     tem_foto_material: bool
+    numero_patrimonio_material: str | None
 
 
 class EmprestimoCreate(EmprestimoBase):
@@ -108,11 +110,19 @@ class EmprestimoHistoricoResponse(BaseModel):
     data_cadastro: datetime
 
 
+# "Comodato" é o termo original (assinado uma vez, na criação do
+# empréstimo); "Renovação" é um termo aditivo, assinado sempre que o prazo
+# é prorrogado — pode haver vários por empréstimo. Ver
+# `models.EmprestimoContrato` e `service.criar_contrato`.
+TipoContrato = Literal["Comodato", "Renovação"]
+
+
 class EmprestimoContratoCreate(BaseModel):
     # PNG do canvas de assinatura, em base64 — aceita tanto a string crua
     # quanto uma data URL completa (`HTMLCanvasElement.toDataURL()`). Ver
     # `app/shared/imagem.decodificar_base64_imagem`.
     assinatura_png_base64: str = Field(min_length=1)
+    tipo: TipoContrato = "Comodato"
 
 
 class EmprestimoContratoResponse(BaseModel):
@@ -121,4 +131,24 @@ class EmprestimoContratoResponse(BaseModel):
     id: int
     id_emprestimo: int
     id_usuario: int
+    tipo: TipoContrato
     data_assinatura: datetime
+
+
+class AlertaVencimentoEmprestimo(BaseModel):
+    """Um item de empréstimo ainda não devolvido, com a devolução prevista
+    perto (ou já passada) — usado no painel da tela Início pra a equipe
+    entrar em contato com a pessoa e/ou finalizar o empréstimo. Ver
+    `service.listar_alertas_vencimento`."""
+
+    id_emprestimo: int
+    id_item: int
+    id_pessoa: int
+    nome_pessoa: str
+    telefone_pessoa: str | None
+    descricao_material: str
+    numero_patrimonio_material: str | None
+    data_devolucao: date
+    # Negativo quando já venceu (dias em atraso), positivo quando ainda
+    # falta — o front decide a cor a partir daqui (ver home.page.ts).
+    dias_restantes: int

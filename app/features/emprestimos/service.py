@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ from app.features.emprestimos.schemas import (
     EmprestimoUpdate,
 )
 from app.features.materiais.models import Material
+from app.features.materiais_locais.models import MaterialLocal
 from app.features.pessoas.models import Pessoa
 from app.features.usuarios.models import Usuario
 from app.shared.imagem import Base64Invalido, decodificar_base64_imagem
@@ -77,6 +78,73 @@ def _aplicar_devolucao_efetiva(item: EmprestimoItem) -> None:
         item.data_devolucao_efetiva = None
 
 
+def _id_local_material(db: Session, nome: str) -> int | None:
+    """Busca o id de `MaterialLocal` pelo nome — tabela pequena (cadastro
+    manual, ver materiais_locais/), sem necessidade de cache."""
+    return db.scalar(select(MaterialLocal.id).where(MaterialLocal.nome == nome))
+
+
+def _sincronizar_situacao_material(db: Session, item: EmprestimoItem) -> None:
+    """Reflete a situação do item de empréstimo na situação do material
+    (ver `SituacaoMaterial`): item ativo (Pendente/Renovado) marca o
+    material como "Emprestado"; devolvido libera de volta pra "Disponível"
+    em "Casa". Nunca mexe em material "Inutilizado" — baixa é definitiva,
+    não é desfeita por um empréstimo ou devolução. Automatiza o que antes
+    era digitado manualmente pelo usuário (decisão do time, 2026-09-26)."""
+    material = db.get(Material, item.id_material)
+    if material is None or material.situacao == "Inutilizado":
+        return
+    if item.situacao == "Devolvido":
+        material.situacao = "Disponível"
+        id_casa = _id_local_material(db, "Casa")
+        if id_casa is not None:
+            material.id_local = id_casa
+        material.disponivel_emprestimo = True
+    else:
+        material.situacao = "Emprestado"
+        id_emprestimo = _id_local_material(db, "Empréstimo")
+        if id_emprestimo is not None:
+            material.id_local = id_emprestimo
+        material.disponivel_emprestimo = False
+    db.commit()
+
+
+class MaterialJaNoEmprestimo(Exception):
+    pass
+
+
+def _verificar_material_duplicado(
+    db: Session, emprestimo_id: int, id_material: int, excluir_item_id: int | None = None
+) -> None:
+    """Um material não pode ter dois itens ativos (não "Devolvido") no
+    mesmo empréstimo — fisicamente é o mesmo objeto, não faz sentido
+    emprestá-lo duas vezes na mesma ficha. Um item já "Devolvido" não
+    conta (o material pode ser re-emprestado depois, no mesmo registro ou
+    em outro)."""
+    consulta = select(EmprestimoItem.id).where(
+        EmprestimoItem.id_emprestimo == emprestimo_id,
+        EmprestimoItem.id_material == id_material,
+        EmprestimoItem.situacao != "Devolvido",
+    )
+    if excluir_item_id is not None:
+        consulta = consulta.where(EmprestimoItem.id != excluir_item_id)
+    if db.scalar(consulta) is not None:
+        raise MaterialJaNoEmprestimo("Este material já está incluído neste empréstimo.")
+
+
+def _validar_itens_duplicados_na_criacao(itens: list[EmprestimoItemCreate]) -> None:
+    """Mesma regra de `_verificar_material_duplicado`, aplicada aos itens
+    aninhados na criação de um empréstimo novo (ainda sem id pra consultar
+    o banco)."""
+    vistos: set[int] = set()
+    for item in itens:
+        if item.situacao == "Devolvido":
+            continue
+        if item.id_material in vistos:
+            raise MaterialJaNoEmprestimo("Este material já está incluído neste empréstimo.")
+        vistos.add(item.id_material)
+
+
 def _descricao_item(db: Session, item: EmprestimoItem) -> str:
     material = db.get(Material, item.id_material)
     descricao_material = material.descricao if material else f"material #{item.id_material}"
@@ -121,7 +189,50 @@ def buscar(db: Session, emprestimo_id: int) -> Emprestimo | None:
     return db.get(Emprestimo, emprestimo_id)
 
 
+DIAS_HORIZONTE_ALERTA_VENCIMENTO = 14
+
+
+def listar_alertas_vencimento(
+    db: Session, dias_horizonte: int = DIAS_HORIZONTE_ALERTA_VENCIMENTO
+) -> list[dict]:
+    """Itens ainda não devolvidos com `data_devolucao` dentro do horizonte
+    (padrão 14 dias) ou já vencidos — painel da tela Início (ver
+    `schemas.AlertaVencimentoEmprestimo`). Ordenado do mais urgente
+    (vencido há mais tempo) pro menos urgente."""
+    hoje = date.today()
+    limite = hoje + timedelta(days=dias_horizonte)
+    consulta = (
+        select(EmprestimoItem, Emprestimo, Pessoa, Material)
+        .join(Emprestimo, EmprestimoItem.id_emprestimo == Emprestimo.id)
+        .join(Pessoa, Emprestimo.id_pessoa == Pessoa.id)
+        .join(Material, EmprestimoItem.id_material == Material.id)
+        .where(
+            Emprestimo.ativo.is_(True),
+            EmprestimoItem.situacao != "Devolvido",
+            EmprestimoItem.data_devolucao.is_not(None),
+            EmprestimoItem.data_devolucao <= limite,
+        )
+        .order_by(EmprestimoItem.data_devolucao)
+    )
+    return [
+        {
+            "id_emprestimo": emprestimo.id,
+            "id_item": item.id,
+            "id_pessoa": pessoa.id,
+            "nome_pessoa": pessoa.nome,
+            "telefone_pessoa": pessoa.telefone_principal,
+            "descricao_material": material.descricao,
+            "numero_patrimonio_material": material.numero_patrimonio,
+            "data_devolucao": item.data_devolucao,
+            "dias_restantes": (item.data_devolucao - hoje).days,
+        }
+        for item, emprestimo, pessoa, material in db.execute(consulta).all()
+    ]
+
+
 def criar(db: Session, dados: EmprestimoCreate) -> Emprestimo:
+    _validar_itens_duplicados_na_criacao(dados.itens)
+
     # Situação inicial do cabeçalho é sempre "Pendente" (mesmo default do
     # legado ao criar um novo registro, `btnNovoClick`) — recalculada logo
     # abaixo a partir dos itens aninhados, se houver algum.
@@ -146,6 +257,7 @@ def criar(db: Session, dados: EmprestimoCreate) -> Emprestimo:
 
     for item, id_usuario_item in itens_criados:
         db.refresh(item)
+        _sincronizar_situacao_material(db, item)
         _registrar_historico(
             db,
             emprestimo.id,
@@ -188,10 +300,11 @@ def inativar(db: Session, emprestimo: Emprestimo) -> None:
 
 
 def _anexar_material(db: Session, itens: list[EmprestimoItem]) -> list[EmprestimoItem]:
-    """Anexa `descricao_material`/`tem_foto_material` (atributos transientes,
-    não persistidos em `emprestimo_item`) a cada item, pra popular
-    `EmprestimoItemResponse` sem N+1 — usado pelo front pra mostrar a
-    descrição e a miniatura do material no popover de devolução."""
+    """Anexa `descricao_material`/`tem_foto_material`/`numero_patrimonio_material`
+    (atributos transientes, não persistidos em `emprestimo_item`) a cada
+    item, pra popular `EmprestimoItemResponse` sem N+1 — usado pelo front
+    pra mostrar a descrição, a miniatura e o número do patrimônio do
+    material na listagem de itens do empréstimo."""
     if not itens:
         return itens
     materiais = {
@@ -206,6 +319,9 @@ def _anexar_material(db: Session, itens: list[EmprestimoItem]) -> list[Emprestim
             material.descricao if material else f"material #{item.id_material}"
         )
         item.tem_foto_material = material.tem_foto if material else False  # type: ignore[attr-defined]
+        item.numero_patrimonio_material = (  # type: ignore[attr-defined]
+            material.numero_patrimonio if material else None
+        )
     return itens
 
 
@@ -216,6 +332,9 @@ def listar_itens(db: Session, emprestimo_id: int) -> list[EmprestimoItem]:
 
 
 def adicionar_item(db: Session, emprestimo_id: int, dados: EmprestimoItemCreate) -> EmprestimoItem:
+    if dados.situacao != "Devolvido":
+        _verificar_material_duplicado(db, emprestimo_id, dados.id_material)
+
     item = EmprestimoItem(
         id_emprestimo=emprestimo_id, **dados.model_dump(exclude={"id_usuario"})
     )
@@ -226,6 +345,7 @@ def adicionar_item(db: Session, emprestimo_id: int, dados: EmprestimoItemCreate)
     emprestimo = db.get(Emprestimo, emprestimo_id)
     if emprestimo is not None:
         _recalcular_situacao(db, emprestimo)
+    _sincronizar_situacao_material(db, item)
     _registrar_historico(
         db, emprestimo_id, dados.id_usuario, "Item incluído", f"Item incluído: {_descricao_item(db, item)}"
     )
@@ -240,6 +360,11 @@ def buscar_item(db: Session, item_id: int) -> EmprestimoItem | None:
 def atualizar_item(
     db: Session, item: EmprestimoItem, dados: EmprestimoItemUpdate
 ) -> EmprestimoItem:
+    if dados.situacao != "Devolvido":
+        _verificar_material_duplicado(
+            db, item.id_emprestimo, dados.id_material, excluir_item_id=item.id
+        )
+
     for campo, valor in dados.model_dump(exclude={"id_usuario"}).items():
         setattr(item, campo, valor)
     _aplicar_devolucao_efetiva(item)
@@ -248,6 +373,7 @@ def atualizar_item(
     emprestimo = db.get(Emprestimo, item.id_emprestimo)
     if emprestimo is not None:
         _recalcular_situacao(db, emprestimo)
+    _sincronizar_situacao_material(db, item)
     _registrar_historico(
         db, item.id_emprestimo, dados.id_usuario, "Item alterado", f"Item alterado: {_descricao_item(db, item)}"
     )
@@ -259,10 +385,10 @@ def devolver(
     db: Session, emprestimo: Emprestimo, id_usuario: int, data_devolucao: date | None = None
 ) -> Emprestimo:
     # Devolução em massa: marca o empréstimo e todos os itens ainda não
-    # devolvidos como "Devolvido", e libera cada material associado — mesma
-    # regra do legado (`AtualizarSituacaoMaterial` em
-    # untDtmManutencaoEmprestimo.pas), que só não libera material já
-    # "Baixado" (baixa é definitiva, não é desfeita por uma devolução).
+    # devolvidos como "Devolvido", e libera cada material associado (ver
+    # `_sincronizar_situacao_material`) — mesma regra do legado
+    # (`AtualizarSituacaoMaterial` em untDtmManutencaoEmprestimo.pas), que
+    # só não libera material já baixado ("Inutilizado", baixa definitiva).
     data_efetiva = data_devolucao or date.today()
     itens = list(
         db.scalars(select(EmprestimoItem).where(EmprestimoItem.id_emprestimo == emprestimo.id)).all()
@@ -272,12 +398,7 @@ def devolver(
     for item in itens_devolvidos:
         item.situacao = "Devolvido"
         item.data_devolucao_efetiva = data_efetiva
-
-        material = db.get(Material, item.id_material)
-        if material is not None and material.situacao != "Baixado":
-            material.situacao = "Disponível"
-            material.local = "Casa"
-            material.disponivel_emprestimo = True
+        _sincronizar_situacao_material(db, item)
 
     db.commit()
     db.refresh(emprestimo)
@@ -302,6 +423,10 @@ class ContratoJaAssinado(Exception):
 
 
 class ContratoDadosIncompletos(Exception):
+    pass
+
+
+class RenovacaoSemContratoOriginal(Exception):
     pass
 
 
@@ -461,8 +586,10 @@ def _texto_itens_contrato(db: Session, itens: list[EmprestimoItem]) -> str:
     for item in itens:
         material = db.get(Material, item.id_material)
         nome = material.descricao.upper() if material else f"MATERIAL #{item.id_material}"
-        codigo = material.codigo_identificacao if material else None
-        descricoes.append(f"01 (UM) {nome} Nº {codigo}" if codigo else f"01 (UM) {nome}")
+        numero_patrimonio = material.numero_patrimonio if material else None
+        descricoes.append(
+            f"01 (UM) {nome} Nº {numero_patrimonio}" if numero_patrimonio else f"01 (UM) {nome}"
+        )
     if not descricoes:
         return "bem(ns) a ser(em) especificado(s)"
     return " e ".join(descricoes)
@@ -533,17 +660,102 @@ def _gerar_pdf_contrato(
     return pdf.gerar_bytes()
 
 
-def buscar_contrato(db: Session, emprestimo_id: int) -> EmprestimoContrato | None:
+# Termo aditivo, sem modelo cedido pela CAAF (decisão de produto,
+# 2026-09-26 — time pediu "um contrato pra quando precisa renovar o
+# prazo", sem especificar o texto). Bem mais curto que o comodato original:
+# não repete cláusulas fixas (tabela de taxas, danos, foro etc., que
+# continuam valendo do contrato original) — só identifica o beneficiário,
+# reafirma o(s) item(ns) já emprestado(s) e formaliza o novo prazo.
+_TITULO_TERMO_RENOVACAO = "TERMO ADITIVO DE RENOVAÇÃO DE PRAZO — EMPRÉSTIMO SOLIDÁRIO"
+
+_TEXTO_RENOVACAO_INTRO = (
+    "O presente termo é aditivo ao Contrato de Comodato de Bem Móvel — Empréstimo Solidário "
+    "firmado em **{data_original}** entre a Associação Família Zalewski - Casa de Apoio Amor "
+    "Fraterno (CAAF) e **{nome}**, CPF **{cpf}**, referente a **{itens}**, e tem por única "
+    "finalidade prorrogar o prazo de devolução do(s) bem(ns) acima. Permanecem em pleno vigor, "
+    "sem alteração, todas as demais cláusulas do contrato original."
+)
+
+_TEXTO_RENOVACAO_PRAZO = (
+    "**NOVO PRAZO:** o(s) bem(ns) deverá(ão) ser devolvido(s) até **{termino}**, prorrogado a "
+    "partir de **{inicio}**, totalizando **{dias} dias**. **O prazo máximo de empréstimo, "
+    "somadas todas as renovações, é de 6 (seis) meses.**"
+)
+
+
+def _gerar_pdf_termo_renovacao(
+    db: Session,
+    emprestimo: Emprestimo,
+    pessoa: Pessoa,
+    itens: list[EmprestimoItem],
+    contrato_original: EmprestimoContrato,
+    assinatura_png: bytes,
+) -> bytes:
+    identificador = emprestimo.numero_contrato or f"#{emprestimo.id}"
+    inicio, termino, dias = _prazo_vigencia_contrato(itens)
+
+    pdf = DocumentoPDF(rodape=_RODAPE_CONTRATO)
+    pdf.titulo_documento(f"{_TITULO_TERMO_RENOVACAO}\n{identificador}")
+
+    pdf.paragrafo(f"IDENTIFICAÇÃO DO(A) BENEFICIÁRIO: **{pessoa.nome}**.")
+    pdf.paragrafo(
+        _TEXTO_RENOVACAO_INTRO.format(
+            data_original=contrato_original.data_assinatura.strftime("%d/%m/%Y"),
+            nome=pessoa.nome,
+            cpf=pessoa.cpf or "-",
+            itens=_texto_itens_contrato(db, itens),
+        )
+    )
+    pdf.paragrafo(
+        _TEXTO_RENOVACAO_PRAZO.format(
+            inicio=inicio.strftime("%d/%m/%Y"), termino=termino.strftime("%d/%m/%Y"), dias=dias
+        )
+    )
+    pdf.paragrafo(_CLAUSULA_3)
+    pdf.paragrafo(_TEXTO_ENCERRAMENTO)
+    pdf.paragrafo(f"Porto União, {_data_por_extenso(date.today())}.")
+
+    pdf.campo_assinatura(f"{pessoa.nome} - Responsável pelo Empréstimo", imagem_assinatura=assinatura_png)
+    pdf.assinaturas_lado_a_lado(
+        [("Laurete Dub Pinto Conte", "Presidente"), ("Cinthia Keiser", "Gerente Geral")]
+    )
+
+    return pdf.gerar_bytes()
+
+
+def listar_contratos(db: Session, emprestimo_id: int) -> list[EmprestimoContrato]:
+    consulta = select(EmprestimoContrato).where(EmprestimoContrato.id_emprestimo == emprestimo_id)
+    return list(db.scalars(consulta.order_by(EmprestimoContrato.data_assinatura)).all())
+
+
+def buscar_contrato(db: Session, contrato_id: int) -> EmprestimoContrato | None:
+    return db.get(EmprestimoContrato, contrato_id)
+
+
+def _buscar_contrato_original(db: Session, emprestimo_id: int) -> EmprestimoContrato | None:
     return db.scalar(
-        select(EmprestimoContrato).where(EmprestimoContrato.id_emprestimo == emprestimo_id)
+        select(EmprestimoContrato).where(
+            EmprestimoContrato.id_emprestimo == emprestimo_id,
+            EmprestimoContrato.tipo == "Comodato",
+        )
     )
 
 
 def criar_contrato(
-    db: Session, emprestimo: Emprestimo, id_usuario: int, assinatura_png_base64: str
+    db: Session,
+    emprestimo: Emprestimo,
+    id_usuario: int,
+    assinatura_png_base64: str,
+    tipo: str = "Comodato",
 ) -> EmprestimoContrato:
-    if buscar_contrato(db, emprestimo.id) is not None:
-        raise ContratoJaAssinado("Este empréstimo já tem um contrato assinado.")
+    contrato_original = _buscar_contrato_original(db, emprestimo.id)
+    if tipo == "Comodato" and contrato_original is not None:
+        raise ContratoJaAssinado("Este empréstimo já tem um contrato de comodato assinado.")
+    if tipo == "Renovação" and contrato_original is None:
+        raise RenovacaoSemContratoOriginal(
+            "Este empréstimo ainda não tem um contrato de comodato assinado — "
+            "assine o contrato original antes de gerar um termo de renovação."
+        )
 
     assinatura_png = decodificar_base64_imagem(assinatura_png_base64)
     if len(assinatura_png) > TAMANHO_MAXIMO_ASSINATURA_BYTES:
@@ -557,11 +769,15 @@ def criar_contrato(
     itens = list(
         db.scalars(select(EmprestimoItem).where(EmprestimoItem.id_emprestimo == emprestimo.id)).all()
     )
-    pdf_bytes = _gerar_pdf_contrato(db, emprestimo, pessoa, usuario, itens, assinatura_png)
+    if tipo == "Renovação":
+        pdf_bytes = _gerar_pdf_termo_renovacao(db, emprestimo, pessoa, itens, contrato_original, assinatura_png)
+    else:
+        pdf_bytes = _gerar_pdf_contrato(db, emprestimo, pessoa, usuario, itens, assinatura_png)
 
     contrato = EmprestimoContrato(
         id_emprestimo=emprestimo.id,
         id_usuario=id_usuario,
+        tipo=tipo,
         assinatura=assinatura_png,
         pdf=pdf_bytes,
         data_assinatura=datetime.now(UTC).replace(tzinfo=None),
@@ -570,8 +786,15 @@ def criar_contrato(
     db.commit()
     db.refresh(contrato)
 
+    descricao_historico = (
+        "Termo de renovação de prazo assinado." if tipo == "Renovação" else "Termo de responsabilidade assinado."
+    )
     _registrar_historico(
-        db, emprestimo.id, id_usuario, "Contrato assinado", "Termo de responsabilidade assinado."
+        db,
+        emprestimo.id,
+        id_usuario,
+        "Contrato assinado" if tipo == "Comodato" else "Renovação assinada",
+        descricao_historico,
     )
 
     return contrato

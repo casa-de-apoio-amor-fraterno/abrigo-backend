@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.features.auth.dependencies import usuario_atual
 from app.features.emprestimos import service
 from app.features.emprestimos.schemas import (
+    AlertaVencimentoEmprestimo,
     EmprestimoContratoCreate,
     EmprestimoContratoResponse,
     EmprestimoCreate,
@@ -40,6 +41,16 @@ def listar(
     return {"items": [EmprestimoResumoResponse.model_validate(e) for e in itens], "total": total}
 
 
+@router.get("/alertas-vencimento", response_model=list[AlertaVencimentoEmprestimo])
+def listar_alertas_vencimento(
+    dias: int = service.DIAS_HORIZONTE_ALERTA_VENCIMENTO, db: Session = Depends(get_db)
+) -> list[AlertaVencimentoEmprestimo]:
+    return [
+        AlertaVencimentoEmprestimo.model_validate(alerta)
+        for alerta in service.listar_alertas_vencimento(db, dias_horizonte=dias)
+    ]
+
+
 @router.get("/{emprestimo_id}", response_model=EmprestimoResponse)
 def buscar(emprestimo_id: int, db: Session = Depends(get_db)) -> EmprestimoResponse:
     emprestimo = service.buscar(db, emprestimo_id)
@@ -50,7 +61,10 @@ def buscar(emprestimo_id: int, db: Session = Depends(get_db)) -> EmprestimoRespo
 
 @router.post("", response_model=EmprestimoResponse, status_code=201)
 def criar(dados: EmprestimoCreate, db: Session = Depends(get_db)) -> EmprestimoResponse:
-    return EmprestimoResponse.model_validate(service.criar(db, dados))
+    try:
+        return EmprestimoResponse.model_validate(service.criar(db, dados))
+    except service.MaterialJaNoEmprestimo as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.put("/{emprestimo_id}", response_model=EmprestimoResponse)
@@ -98,7 +112,10 @@ def adicionar_item(
     emprestimo = service.buscar(db, emprestimo_id)
     if emprestimo is None:
         raise HTTPException(status_code=404, detail="Empréstimo não encontrado")
-    return EmprestimoItemResponse.model_validate(service.adicionar_item(db, emprestimo_id, dados))
+    try:
+        return EmprestimoItemResponse.model_validate(service.adicionar_item(db, emprestimo_id, dados))
+    except service.MaterialJaNoEmprestimo as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.put("/{emprestimo_id}/itens/{item_id}", response_model=EmprestimoItemResponse)
@@ -111,7 +128,10 @@ def atualizar_item(
     item = service.buscar_item(db, item_id)
     if item is None or item.id_emprestimo != emprestimo_id:
         raise HTTPException(status_code=404, detail="Item de empréstimo não encontrado")
-    return EmprestimoItemResponse.model_validate(service.atualizar_item(db, item, dados))
+    try:
+        return EmprestimoItemResponse.model_validate(service.atualizar_item(db, item, dados))
+    except service.MaterialJaNoEmprestimo as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/{emprestimo_id}/historico", response_model=list[EmprestimoHistoricoResponse])
@@ -124,19 +144,19 @@ def listar_historico(emprestimo_id: int, db: Session = Depends(get_db)) -> list[
     ]
 
 
-@router.get("/{emprestimo_id}/contrato", response_model=EmprestimoContratoResponse)
-def buscar_contrato(emprestimo_id: int, db: Session = Depends(get_db)) -> EmprestimoContratoResponse:
-    contrato = service.buscar_contrato(db, emprestimo_id)
-    if contrato is None:
-        raise HTTPException(status_code=404, detail="Este empréstimo ainda não tem contrato assinado")
-    return EmprestimoContratoResponse.model_validate(contrato)
+@router.get("/{emprestimo_id}/contratos", response_model=list[EmprestimoContratoResponse])
+def listar_contratos(emprestimo_id: int, db: Session = Depends(get_db)) -> list[EmprestimoContratoResponse]:
+    emprestimo = service.buscar(db, emprestimo_id)
+    if emprestimo is None:
+        raise HTTPException(status_code=404, detail="Empréstimo não encontrado")
+    return [EmprestimoContratoResponse.model_validate(c) for c in service.listar_contratos(db, emprestimo_id)]
 
 
-@router.get("/{emprestimo_id}/contrato/pdf")
-def obter_pdf_contrato(emprestimo_id: int, db: Session = Depends(get_db)) -> Response:
-    contrato = service.buscar_contrato(db, emprestimo_id)
-    if contrato is None:
-        raise HTTPException(status_code=404, detail="Este empréstimo ainda não tem contrato assinado")
+@router.get("/{emprestimo_id}/contratos/{contrato_id}/pdf")
+def obter_pdf_contrato(emprestimo_id: int, contrato_id: int, db: Session = Depends(get_db)) -> Response:
+    contrato = service.buscar_contrato(db, contrato_id)
+    if contrato is None or contrato.id_emprestimo != emprestimo_id:
+        raise HTTPException(status_code=404, detail="Contrato não encontrado")
     return Response(content=contrato.pdf, media_type="application/pdf")
 
 
@@ -155,8 +175,10 @@ def assinar_contrato(
     if emprestimo is None:
         raise HTTPException(status_code=404, detail="Empréstimo não encontrado")
     try:
-        contrato = service.criar_contrato(db, emprestimo, usuario.id, dados.assinatura_png_base64)
+        contrato = service.criar_contrato(db, emprestimo, usuario.id, dados.assinatura_png_base64, dados.tipo)
     except service.ContratoJaAssinado as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except service.RenovacaoSemContratoOriginal as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except service.ContratoDadosIncompletos as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
