@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -31,12 +33,21 @@ def listar(
     id_pessoa: int | None = None,
     situacao: SituacaoEmprestimo | None = None,
     busca: str | None = None,
+    data_devolucao_inicio: date | None = None,
+    data_devolucao_fim: date | None = None,
     skip: int = 0,
     take: int = 50,
     db: Session = Depends(get_db),
 ) -> dict:
     itens, total = service.listar(
-        db, id_pessoa=id_pessoa, situacao=situacao, busca=busca, skip=skip, take=take
+        db,
+        id_pessoa=id_pessoa,
+        situacao=situacao,
+        busca=busca,
+        data_devolucao_inicio=data_devolucao_inicio,
+        data_devolucao_fim=data_devolucao_fim,
+        skip=skip,
+        take=take,
     )
     return {"items": [EmprestimoResumoResponse.model_validate(e) for e in itens], "total": total}
 

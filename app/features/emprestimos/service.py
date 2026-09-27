@@ -165,6 +165,8 @@ def listar(
     id_pessoa: int | None = None,
     situacao: str | None = None,
     busca: str | None = None,
+    data_devolucao_inicio: date | None = None,
+    data_devolucao_fim: date | None = None,
     skip: int = 0,
     take: int = 50,
 ) -> tuple[list[Emprestimo], int]:
@@ -179,6 +181,17 @@ def listar(
         consulta = consulta.join(Pessoa, Pessoa.id == Emprestimo.id_pessoa).where(
             Pessoa.nome.ilike(f"%{busca}%")
         )
+    if data_devolucao_inicio is not None or data_devolucao_fim is not None:
+        # `data_devolucao` (prevista) mora no item, não no cabeçalho — o
+        # join traria o mesmo Emprestimo repetido se ele tiver mais de um
+        # item na faixa, daí o `distinct()`.
+        consulta = consulta.join(
+            EmprestimoItem, EmprestimoItem.id_emprestimo == Emprestimo.id
+        ).distinct()
+        if data_devolucao_inicio is not None:
+            consulta = consulta.where(EmprestimoItem.data_devolucao >= data_devolucao_inicio)
+        if data_devolucao_fim is not None:
+            consulta = consulta.where(EmprestimoItem.data_devolucao <= data_devolucao_fim)
 
     total = db.scalar(select(func.count()).select_from(consulta.subquery())) or 0
     itens = db.scalars(consulta.order_by(Emprestimo.id.desc()).offset(skip).limit(take)).all()
