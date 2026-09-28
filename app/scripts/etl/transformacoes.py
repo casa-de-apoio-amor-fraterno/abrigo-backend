@@ -11,7 +11,7 @@ raciocínio por trás de cada conversão.
 """
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 # Separadores usados no dado real pra emendar mais de um telefone no mesmo
 # campo de texto livre (ver achado na investigação de docs/atividades.md,
@@ -329,6 +329,12 @@ def transformar_estadia_acompanhante(linha: dict) -> dict:
 
 
 def transformar_emprestimo(linha: dict) -> dict:
+    # `data_emprestimo`/`data_devolucao`/`data_devolucao_efetiva` não vêm
+    # daqui — o legado guarda essas datas por item (`emprestimo_item`), não
+    # no cabeçalho. `etl_migracao._preencher_datas_emprestimo` popula essas
+    # 3 colunas depois de carregar `emprestimo_item`, escolhendo o item de
+    # maior peso (maior `data_devolucao - data_emprestimo`) por empréstimo
+    # — mesma regra da migração `0029` (ver seu docstring).
     return {
         "id": linha["id_emprestimo"],
         "id_pessoa": linha["id_pessoa"],
@@ -345,10 +351,47 @@ def transformar_emprestimo_item(linha: dict) -> dict:
         "id": linha["id_emprestimo_item"],
         "id_emprestimo": linha["id_emprestimo"],
         "id_material": linha["id_material"],
-        "data_emprestimo": data_zerada_para_none(linha["data_emprestimo"]),
-        "data_devolucao": data_zerada_para_none(linha["data_devolucao"]),
         "situacao": texto_ou_none(linha["situacao"]),
         "renovacao": texto_ou_none(linha["renovacao"]),
+    }
+
+
+def datas_emprestimo_por_peso(linhas_emprestimo_item: list[dict]) -> dict[int, dict]:
+    """Escolhe, pra cada `id_emprestimo`, as datas do item de maior peso —
+    aquele cujo intervalo `data_devolucao - data_emprestimo` é o maior
+    entre os itens do mesmo empréstimo (item de 40 dias vence sobre um de
+    20, por exemplo). Itens sem as duas datas contam como peso mínimo;
+    empate desempata pelo maior `id_emprestimo_item` (item mais recente).
+    Usado por `etl_migracao` pra preencher `Emprestimo.data_emprestimo`/
+    `data_devolucao`/`data_devolucao_efetiva` a partir de `emprestimo_item`
+    (mesma regra da migração `0029`, aplicada aqui pro dado ainda no
+    MySQL legado)."""
+
+    def peso(linha: dict) -> tuple[int, date, int]:
+        inicio = data_zerada_para_none(linha["data_emprestimo"])
+        termino = data_zerada_para_none(linha["data_devolucao"])
+        if inicio and termino:
+            return (1, termino - inicio, linha["id_emprestimo_item"])
+        return (0, timedelta(0), linha["id_emprestimo_item"])
+
+    escolhidos: dict[int, dict] = {}
+    for linha in linhas_emprestimo_item:
+        id_emprestimo = linha["id_emprestimo"]
+        atual = escolhidos.get(id_emprestimo)
+        if atual is None or peso(linha) > peso(atual):
+            escolhidos[id_emprestimo] = linha
+
+    return {
+        id_emprestimo: {
+            "data_emprestimo": data_zerada_para_none(linha["data_emprestimo"]),
+            "data_devolucao": data_zerada_para_none(linha["data_devolucao"]),
+            "data_devolucao_efetiva": (
+                data_zerada_para_none(linha["data_devolucao"])
+                if texto_ou_none(linha["situacao"]) == "Devolvido"
+                else None
+            ),
+        }
+        for id_emprestimo, linha in escolhidos.items()
     }
 
 

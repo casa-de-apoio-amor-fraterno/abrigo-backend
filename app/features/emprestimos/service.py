@@ -60,22 +60,23 @@ def _recalcular_situacao(db: Session, emprestimo: Emprestimo) -> None:
     else:
         nova_situacao = "Pendente"
 
-    if emprestimo.situacao != nova_situacao:
-        emprestimo.situacao = nova_situacao
+    precisa_commit = emprestimo.situacao != nova_situacao
+    emprestimo.situacao = nova_situacao
+
+    # `data_devolucao_efetiva` mora no empréstimo (não mais no item, ver
+    # models.py) — gravada automaticamente quando a situação calculada vira
+    # "Devolvido", e limpa se ela for corrigida pra outra coisa depois.
+    if nova_situacao == "Devolvido":
+        if emprestimo.data_devolucao_efetiva is None:
+            emprestimo.data_devolucao_efetiva = date.today()
+            precisa_commit = True
+    elif emprestimo.data_devolucao_efetiva is not None:
+        emprestimo.data_devolucao_efetiva = None
+        precisa_commit = True
+
+    if precisa_commit:
         db.commit()
         db.refresh(emprestimo)
-
-
-def _aplicar_devolucao_efetiva(item: EmprestimoItem) -> None:
-    # `data_devolucao` é prevista (digitada manualmente, ver models.py);
-    # `data_devolucao_efetiva` é gravada aqui, automaticamente, só quando o
-    # item passa a "Devolvido" — e limpa se a situação for corrigida pra
-    # outra coisa depois.
-    if item.situacao == "Devolvido":
-        if item.data_devolucao_efetiva is None:
-            item.data_devolucao_efetiva = date.today()
-    else:
-        item.data_devolucao_efetiva = None
 
 
 def _id_local_material(db: Session, nome: str) -> int | None:
@@ -148,16 +149,7 @@ def _validar_itens_duplicados_na_criacao(itens: list[EmprestimoItemCreate]) -> N
 def _descricao_item(db: Session, item: EmprestimoItem) -> str:
     material = db.get(Material, item.id_material)
     descricao_material = material.descricao if material else f"material #{item.id_material}"
-    data_emprestimo = item.data_emprestimo.strftime("%d/%m/%Y") if item.data_emprestimo else "-"
-    data_devolucao = item.data_devolucao.strftime("%d/%m/%Y") if item.data_devolucao else "-"
-    data_devolucao_efetiva = (
-        item.data_devolucao_efetiva.strftime("%d/%m/%Y") if item.data_devolucao_efetiva else "-"
-    )
-    return (
-        f"{descricao_material} (situação: {item.situacao or '-'}, "
-        f"data empréstimo: {data_emprestimo}, data devolução prevista: {data_devolucao}, "
-        f"data devolução efetiva: {data_devolucao_efetiva})"
-    )
+    return f"{descricao_material} (situação: {item.situacao or '-'})"
 
 
 def listar(
@@ -181,17 +173,10 @@ def listar(
         consulta = consulta.join(Pessoa, Pessoa.id == Emprestimo.id_pessoa).where(
             Pessoa.nome.ilike(f"%{busca}%")
         )
-    if data_devolucao_inicio is not None or data_devolucao_fim is not None:
-        # `data_devolucao` (prevista) mora no item, não no cabeçalho — o
-        # join traria o mesmo Emprestimo repetido se ele tiver mais de um
-        # item na faixa, daí o `distinct()`.
-        consulta = consulta.join(
-            EmprestimoItem, EmprestimoItem.id_emprestimo == Emprestimo.id
-        ).distinct()
-        if data_devolucao_inicio is not None:
-            consulta = consulta.where(EmprestimoItem.data_devolucao >= data_devolucao_inicio)
-        if data_devolucao_fim is not None:
-            consulta = consulta.where(EmprestimoItem.data_devolucao <= data_devolucao_fim)
+    if data_devolucao_inicio is not None:
+        consulta = consulta.where(Emprestimo.data_devolucao >= data_devolucao_inicio)
+    if data_devolucao_fim is not None:
+        consulta = consulta.where(Emprestimo.data_devolucao <= data_devolucao_fim)
 
     total = db.scalar(select(func.count()).select_from(consulta.subquery())) or 0
     itens = db.scalars(consulta.order_by(Emprestimo.id.desc()).offset(skip).limit(take)).all()
@@ -208,10 +193,12 @@ DIAS_HORIZONTE_ALERTA_VENCIMENTO = 14
 def listar_alertas_vencimento(
     db: Session, dias_horizonte: int = DIAS_HORIZONTE_ALERTA_VENCIMENTO
 ) -> list[dict]:
-    """Itens ainda não devolvidos com `data_devolucao` dentro do horizonte
-    (padrão 14 dias) ou já vencidos — painel da tela Início (ver
-    `schemas.AlertaVencimentoEmprestimo`). Ordenado do mais urgente
-    (vencido há mais tempo) pro menos urgente."""
+    """Itens ainda não devolvidos cujo empréstimo tem `data_devolucao`
+    dentro do horizonte (padrão 14 dias) ou já vencida — painel da tela
+    Início (ver `schemas.AlertaVencimentoEmprestimo`). `data_devolucao`
+    mora no empréstimo (nível compartilhado por todos os itens, ver
+    models.py), não mais no item. Ordenado do mais urgente (vencido há mais
+    tempo) pro menos urgente."""
     hoje = date.today()
     limite = hoje + timedelta(days=dias_horizonte)
     consulta = (
@@ -222,10 +209,10 @@ def listar_alertas_vencimento(
         .where(
             Emprestimo.ativo.is_(True),
             EmprestimoItem.situacao != "Devolvido",
-            EmprestimoItem.data_devolucao.is_not(None),
-            EmprestimoItem.data_devolucao <= limite,
+            Emprestimo.data_devolucao.is_not(None),
+            Emprestimo.data_devolucao <= limite,
         )
-        .order_by(EmprestimoItem.data_devolucao)
+        .order_by(Emprestimo.data_devolucao)
     )
     return [
         {
@@ -236,8 +223,8 @@ def listar_alertas_vencimento(
             "telefone_pessoa": pessoa.telefone_principal,
             "descricao_material": material.descricao,
             "numero_patrimonio_material": material.numero_patrimonio,
-            "data_devolucao": item.data_devolucao,
-            "dias_restantes": (item.data_devolucao - hoje).days,
+            "data_devolucao": emprestimo.data_devolucao,
+            "dias_restantes": (emprestimo.data_devolucao - hoje).days,
         }
         for item, emprestimo, pessoa, material in db.execute(consulta).all()
     ]
@@ -259,7 +246,6 @@ def criar(db: Session, dados: EmprestimoCreate) -> Emprestimo:
         item = EmprestimoItem(
             id_emprestimo=emprestimo.id, **item_dados.model_dump(exclude={"id_usuario"})
         )
-        _aplicar_devolucao_efetiva(item)
         db.add(item)
         itens_criados.append((item, item_dados.id_usuario))
 
@@ -351,7 +337,6 @@ def adicionar_item(db: Session, emprestimo_id: int, dados: EmprestimoItemCreate)
     item = EmprestimoItem(
         id_emprestimo=emprestimo_id, **dados.model_dump(exclude={"id_usuario"})
     )
-    _aplicar_devolucao_efetiva(item)
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -380,7 +365,6 @@ def atualizar_item(
 
     for campo, valor in dados.model_dump(exclude={"id_usuario"}).items():
         setattr(item, campo, valor)
-    _aplicar_devolucao_efetiva(item)
     db.commit()
     db.refresh(item)
     emprestimo = db.get(Emprestimo, item.id_emprestimo)
@@ -410,18 +394,63 @@ def devolver(
     itens_devolvidos = [item for item in itens if item.situacao != "Devolvido"]
     for item in itens_devolvidos:
         item.situacao = "Devolvido"
-        item.data_devolucao_efetiva = data_efetiva
         _sincronizar_situacao_material(db, item)
 
     db.commit()
     db.refresh(emprestimo)
     _recalcular_situacao(db, emprestimo)
 
+    # `_recalcular_situacao` grava a data efetiva como hoje quando o
+    # empréstimo vira "Devolvido" — sobrescreve aqui se o cliente mandou uma
+    # data explícita diferente (ex.: devolução registrada em atraso). Só
+    # quando *esta* chamada devolveu algum item de verdade — chamar
+    # `/devolver` num empréstimo já totalmente devolvido é idempotente, não
+    # deve alterar a data efetiva já gravada antes.
+    if itens_devolvidos and emprestimo.situacao == "Devolvido" and emprestimo.data_devolucao_efetiva != data_efetiva:
+        emprestimo.data_devolucao_efetiva = data_efetiva
+        db.commit()
+        db.refresh(emprestimo)
+
     for item in itens_devolvidos:
         db.refresh(item)
         _registrar_historico(
             db, emprestimo.id, id_usuario, "Item alterado", f"Item alterado: {_descricao_item(db, item)}"
         )
+
+    return emprestimo
+
+
+def renovar(db: Session, emprestimo: Emprestimo, id_usuario: int, dias: int) -> Emprestimo:
+    # Ação rápida pedida pelo time (2026-09-28, painel de vencimentos da
+    # tela Início): soma `dias` à data prevista de devolução (a partir de
+    # hoje, se o empréstimo ainda não tinha prazo) e marca todo item ainda
+    # não devolvido como "Renovado" — mesma prioridade de
+    # `_recalcular_situacao` (Renovado vence sobre Pendente), então o
+    # cabeçalho reflete a renovação. Itens já "Devolvido" não são tocados
+    # (renovar não reabre um item que já voltou).
+    base = emprestimo.data_devolucao or date.today()
+    nova_data_devolucao = base + timedelta(days=dias)
+    emprestimo.data_devolucao = nova_data_devolucao
+
+    itens = list(
+        db.scalars(select(EmprestimoItem).where(EmprestimoItem.id_emprestimo == emprestimo.id)).all()
+    )
+    for item in itens:
+        if item.situacao != "Devolvido":
+            item.situacao = "Renovado"
+
+    db.commit()
+    db.refresh(emprestimo)
+    _recalcular_situacao(db, emprestimo)
+
+    _registrar_historico(
+        db,
+        emprestimo.id,
+        id_usuario,
+        "Renovação",
+        f"Prazo renovado por {dias} dia(s) — nova devolução prevista: "
+        f"{nova_data_devolucao.strftime('%d/%m/%Y')}.",
+    )
 
     return emprestimo
 
@@ -608,11 +637,11 @@ def _texto_itens_contrato(db: Session, itens: list[EmprestimoItem]) -> str:
     return " e ".join(descricoes)
 
 
-def _prazo_vigencia_contrato(itens: list[EmprestimoItem]) -> tuple[date, date, int]:
-    datas_inicio = [item.data_emprestimo for item in itens if item.data_emprestimo]
-    datas_termino = [item.data_devolucao for item in itens if item.data_devolucao]
-    inicio = min(datas_inicio) if datas_inicio else date.today()
-    termino = max(datas_termino) if datas_termino else inicio
+def _prazo_vigencia_contrato(emprestimo: Emprestimo) -> tuple[date, date, int]:
+    # Prazo é do empréstimo, não do item (ver models.py) — um único
+    # início/término vale pro contrato inteiro, mesmo com vários itens.
+    inicio = emprestimo.data_emprestimo or date.today()
+    termino = emprestimo.data_devolucao or inicio
     return inicio, termino, (termino - inicio).days
 
 
@@ -625,7 +654,7 @@ def _gerar_pdf_contrato(
     assinatura_png: bytes,
 ) -> bytes:
     identificador = emprestimo.numero_contrato or f"#{emprestimo.id}"
-    inicio, termino, dias = _prazo_vigencia_contrato(itens)
+    inicio, termino, dias = _prazo_vigencia_contrato(emprestimo)
 
     pdf = DocumentoPDF(rodape=_RODAPE_CONTRATO)
     pdf.titulo_documento(f"CONTRATO DE COMODATO DE BEM MÓVEL EMPRÉSTIMO SOLIDÁRIO\n{identificador}")
@@ -705,7 +734,7 @@ def _gerar_pdf_termo_renovacao(
     assinatura_png: bytes,
 ) -> bytes:
     identificador = emprestimo.numero_contrato or f"#{emprestimo.id}"
-    inicio, termino, dias = _prazo_vigencia_contrato(itens)
+    inicio, termino, dias = _prazo_vigencia_contrato(emprestimo)
 
     pdf = DocumentoPDF(rodape=_RODAPE_CONTRATO)
     pdf.titulo_documento(f"{_TITULO_TERMO_RENOVACAO}\n{identificador}")

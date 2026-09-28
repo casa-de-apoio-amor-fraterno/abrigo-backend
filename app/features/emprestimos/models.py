@@ -20,6 +20,17 @@ class Emprestimo(Base):
     real migrado, mas o schema Pydantic (`SituacaoEmprestimo`) já valida o
     conjunto fechado. Dado real observado: 'Pendente', 'Devolvido' (nenhum
     'Renovado' no dump, mas o valor é possível pela lógica do legado).
+
+    `data_emprestimo`/`data_devolucao`/`data_devolucao_efetiva` moveram do
+    nível `EmprestimoItem` pra cá (migração `0029`, sem equivalente direto
+    no legado, que guardava essas datas por item) — decisão do time: com
+    itens de prazos distintos no mesmo empréstimo, o contrato de renovação
+    (`_prazo_vigencia_contrato`) não batia corretamente (um item de 20 dias
+    e outro de 40 dias no mesmo contrato). Um único prazo por empréstimo
+    elimina a ambiguidade. `data_devolucao` continua **prevista**, digitada
+    na criação/edição do empréstimo; `data_devolucao_efetiva` continua
+    gravada automaticamente pelo backend quando `situacao` (calculada a
+    partir dos itens) vira `'Devolvido'` — ver `service._recalcular_situacao`.
     """
 
     __tablename__ = "emprestimo"
@@ -30,6 +41,9 @@ class Emprestimo(Base):
     situacao: Mapped[str] = mapped_column(String(60))
     numero_contrato: Mapped[str | None] = mapped_column(String(60), nullable=True)
     observacao: Mapped[str | None] = mapped_column(Text, nullable=True)
+    data_emprestimo: Mapped[date | None] = mapped_column(Date, nullable=True)
+    data_devolucao: Mapped[date | None] = mapped_column(Date, nullable=True)
+    data_devolucao_efetiva: Mapped[date | None] = mapped_column(Date, nullable=True)
     ativo: Mapped[bool] = mapped_column(default=True)
 
 
@@ -42,16 +56,10 @@ class EmprestimoItem(Base):
     22/05/2019 Devolvido 02/07/2019'`) — não uma data ou boolean, mantido
     como `String`.
 
-    `data_devolucao` é **prevista**, não efetiva: no legado
-    (`untFrmManutencaoEmprestimo`) ela é digitada manualmente no mesmo
-    formulário e no mesmo momento que `data_emprestimo`, junto do combo de
-    `situacao` — não existe nenhum fluxo que a atualize quando o item é
-    devolvido de fato. Confirmado com dado real (`abrigo_teste`): havia
-    itens com `situacao='Pendente'` (ainda emprestados) e `data_devolucao`
-    no passado, o que só é possível se o campo for uma previsão, não um
-    registro do que já aconteceu. `data_devolucao_efetiva` (nova, sem
-    equivalente no legado) é gravada automaticamente pelo backend quando
-    `situacao` passa a `'Devolvido'` — ver `service.py`.
+    As datas do aluguel (`data_emprestimo`/`data_devolucao`/
+    `data_devolucao_efetiva`) moveram pra `Emprestimo` (migração `0029`) —
+    ver docstring de `Emprestimo` acima. O item guarda só o material e a
+    situação individual (usada pra calcular `Emprestimo.situacao`).
     """
 
     __tablename__ = "emprestimo_item"
@@ -59,9 +67,6 @@ class EmprestimoItem(Base):
     id: Mapped[int] = mapped_column("id_emprestimo_item", primary_key=True)
     id_emprestimo: Mapped[int] = mapped_column(ForeignKey("emprestimo.id_emprestimo"))
     id_material: Mapped[int] = mapped_column(ForeignKey("material.id_material"))
-    data_emprestimo: Mapped[date | None] = mapped_column(Date, nullable=True)
-    data_devolucao: Mapped[date | None] = mapped_column(Date, nullable=True)
-    data_devolucao_efetiva: Mapped[date | None] = mapped_column(Date, nullable=True)
     situacao: Mapped[str | None] = mapped_column(String(60), nullable=True)
     renovacao: Mapped[str | None] = mapped_column(String(60), nullable=True)
 

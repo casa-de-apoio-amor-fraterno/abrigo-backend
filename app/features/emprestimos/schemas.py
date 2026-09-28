@@ -24,12 +24,16 @@ class EmprestimoBase(BaseModel):
     id_usuario: int
     numero_contrato: str | None = None
     observacao: str | None = None
+    # Prazo do aluguel — nível empréstimo, não item (ver models.Emprestimo):
+    # um único prazo vale pra todos os itens do mesmo empréstimo.
+    # `data_devolucao` é prevista, digitada aqui; a efetiva é calculada pelo
+    # backend (ver `EmprestimoResponse.data_devolucao_efetiva`).
+    data_emprestimo: date | None = None
+    data_devolucao: date | None = None
 
 
 class EmprestimoItemBase(BaseModel):
     id_material: int
-    data_emprestimo: date | None = None
-    data_devolucao: date | None = None
     situacao: SituacaoEmprestimo | None = None
     renovacao: str | None = None
 
@@ -50,10 +54,6 @@ class EmprestimoItemResponse(EmprestimoItemBase):
 
     id: int
     id_emprestimo: int
-    # Gravada automaticamente pelo backend quando `situacao` vira
-    # "Devolvido" (ver service.py) — não é aceita como input do cliente,
-    # ao contrário de `data_devolucao` (prevista, digitada manualmente).
-    data_devolucao_efetiva: date | None
     # Anexados pelo service a partir de `Material` (não são colunas de
     # `emprestimo_item`) — usados pelo front pra mostrar descrição,
     # miniatura e número do patrimônio do material na listagem de itens,
@@ -82,6 +82,15 @@ class EmprestimoDevolverRequest(BaseModel):
     data_devolucao: date | None = None
 
 
+class EmprestimoRenovarRequest(BaseModel):
+    # Quem registrou a renovação — mesmo padrão de
+    # `EmprestimoDevolverRequest.id_usuario`.
+    id_usuario: int
+    # Quantos dias somar à data prevista de devolução atual (ou a partir de
+    # hoje, se o empréstimo ainda não tinha prazo) — ver `service.renovar`.
+    dias: int = Field(gt=0)
+
+
 class EmprestimoResumoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -89,6 +98,7 @@ class EmprestimoResumoResponse(BaseModel):
     id_pessoa: int
     situacao: SituacaoEmprestimo
     numero_contrato: str | None
+    data_devolucao: date | None
 
 
 class EmprestimoResponse(EmprestimoBase):
@@ -97,6 +107,10 @@ class EmprestimoResponse(EmprestimoBase):
     id: int
     situacao: SituacaoEmprestimo
     ativo: bool
+    # Gravada automaticamente pelo backend quando `situacao` (calculada a
+    # partir dos itens) vira "Devolvido" — não é aceita como input do
+    # cliente, ao contrário de `data_devolucao` (prevista, na base).
+    data_devolucao_efetiva: date | None
 
 
 class EmprestimoHistoricoResponse(BaseModel):

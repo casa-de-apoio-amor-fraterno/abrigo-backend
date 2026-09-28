@@ -67,14 +67,16 @@ def _criterios_situacao_estadia(situacao: FiltroSituacaoEstadia) -> tuple:
 def _criterios_situacao_emprestimo(situacao: FiltroSituacaoEmprestimo) -> tuple:
     # "Alugados" = item ainda com o beneficiário (situação diferente de
     # "Devolvido"). "Vencidos" é um subconjunto disso: além de não
-    # devolvido, a data de devolução prevista já passou.
+    # devolvido, a data de devolução prevista (nível empréstimo, ver
+    # models.py) já passou. Consultas que usam esses critérios precisam dar
+    # join em `Emprestimo` quando o critério for "Vencidos".
     if situacao is FiltroSituacaoEmprestimo.ALUGADOS:
         return (EmprestimoItem.situacao != "Devolvido",)
     if situacao is FiltroSituacaoEmprestimo.VENCIDOS:
         return (
             EmprestimoItem.situacao != "Devolvido",
-            EmprestimoItem.data_devolucao.is_not(None),
-            EmprestimoItem.data_devolucao < date.today(),
+            Emprestimo.data_devolucao.is_not(None),
+            Emprestimo.data_devolucao < date.today(),
         )
     return ()
 
@@ -250,19 +252,21 @@ def gerar_pdf_emprestimos(
     pessoas = {pessoa.id: pessoa for pessoa in db.scalars(select(Pessoa))}
     materiais = {material.id: material.descricao for material in db.scalars(select(Material))}
 
-    # Filtra pelo item (data_emprestimo é do item, não do cabeçalho) — só
-    # entram no relatório os itens cujo próprio empréstimo caiu dentro do
-    # período escolhido, mesmo padrão de "Estadias" (filtra pela data do
-    # evento, não pela data de criação do registro).
+    # `data_emprestimo` mora no empréstimo (nível compartilhado por todos
+    # os itens, ver models.py) — só entram no relatório os itens cujo
+    # próprio empréstimo caiu dentro do período escolhido, mesmo padrão de
+    # "Estadias" (filtra pela data do evento, não pela data de criação do
+    # registro).
     itens_no_periodo = list(
         db.scalars(
             select(EmprestimoItem)
+            .join(Emprestimo, EmprestimoItem.id_emprestimo == Emprestimo.id)
             .where(
-                EmprestimoItem.data_emprestimo.is_not(None),
-                EmprestimoItem.data_emprestimo >= limite,
+                Emprestimo.data_emprestimo.is_not(None),
+                Emprestimo.data_emprestimo >= limite,
                 *_criterios_situacao_emprestimo(situacao),
             )
-            .order_by(EmprestimoItem.data_emprestimo.desc())
+            .order_by(Emprestimo.data_emprestimo.desc())
         )
     )
 
@@ -278,8 +282,8 @@ def gerar_pdf_emprestimos(
                 (pessoa.telefone_principal if pessoa else None) or "-",
                 materiais.get(item.id_material, "-"),
                 emprestimo.numero_contrato or "-",
-                item.data_emprestimo.strftime("%d/%m/%Y") if item.data_emprestimo else "-",
-                item.data_devolucao.strftime("%d/%m/%Y") if item.data_devolucao else "-",
+                emprestimo.data_emprestimo.strftime("%d/%m/%Y") if emprestimo.data_emprestimo else "-",
+                emprestimo.data_devolucao.strftime("%d/%m/%Y") if emprestimo.data_devolucao else "-",
                 item.situacao or emprestimo.situacao,
             ]
         )
@@ -369,15 +373,17 @@ def resumo_emprestimos(
     itens_no_periodo = db.scalar(
         select(func.count())
         .select_from(EmprestimoItem)
+        .join(Emprestimo, EmprestimoItem.id_emprestimo == Emprestimo.id)
         .where(
-            EmprestimoItem.data_emprestimo.is_not(None),
-            EmprestimoItem.data_emprestimo >= limite,
+            Emprestimo.data_emprestimo.is_not(None),
+            Emprestimo.data_emprestimo >= limite,
             *criterios_situacao,
         )
     )
     itens_vencidos = db.scalar(
         select(func.count())
         .select_from(EmprestimoItem)
+        .join(Emprestimo, EmprestimoItem.id_emprestimo == Emprestimo.id)
         .where(*_criterios_situacao_emprestimo(FiltroSituacaoEmprestimo.VENCIDOS))
     )
     itens_em_aberto = db.scalar(

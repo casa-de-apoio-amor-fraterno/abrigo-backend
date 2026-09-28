@@ -71,11 +71,11 @@ def test_criar_emprestimo_com_itens_aninhados(client, db_session):
             "id_pessoa": deps["pessoa"].id,
             "id_usuario": deps["usuario"].id,
             "situacao": "Pendente",
+            "data_emprestimo": "2026-01-10",
             "itens": [
                 {
                     "id_material": deps["material"].id,
                     "id_usuario": deps["usuario"].id,
-                    "data_emprestimo": "2026-01-10",
                     "situacao": "Pendente",
                 }
             ],
@@ -84,6 +84,7 @@ def test_criar_emprestimo_com_itens_aninhados(client, db_session):
     )
     assert resposta.status_code == 201
     emprestimo_id = resposta.json()["id"]
+    assert resposta.json()["data_emprestimo"] == "2026-01-10"
 
     resposta = client.get(f"/api/emprestimos/{emprestimo_id}/itens", headers=headers)
     assert resposta.status_code == 200
@@ -172,7 +173,6 @@ def test_adicionar_e_listar_item(client, db_session):
         json={
             "id_material": deps["material"].id,
             "id_usuario": deps["usuario"].id,
-            "data_emprestimo": "2026-01-10",
             "situacao": "Pendente",
         },
         headers=headers,
@@ -329,21 +329,27 @@ def test_rejeita_situacao_invalida_no_item(client, db_session):
 
 
 def test_atualizar_item_marcando_devolucao(client, db_session):
+    # Prazo (data_emprestimo/data_devolucao) e data_devolucao_efetiva moraram
+    # pro nível do empréstimo (não mais do item, ver models.py) — decisão do
+    # time (2026-09-28): com itens de prazos distintos no mesmo empréstimo, o
+    # contrato de renovação não batia corretamente.
     deps = _criar_dependencias(db_session)
     headers = _auth_header(deps["usuario"])
     resposta = client.post(
         "/api/emprestimos",
-        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+            "data_emprestimo": "2026-01-10",
+            "data_devolucao": "2026-02-10",
+        },
         headers=headers,
     )
     emprestimo_id = resposta.json()["id"]
     resposta = client.post(
         f"/api/emprestimos/{emprestimo_id}/itens",
-        json={
-            "id_material": deps["material"].id,
-            "id_usuario": deps["usuario"].id,
-            "data_emprestimo": "2026-01-10",
-        },
+        json={"id_material": deps["material"].id, "id_usuario": deps["usuario"].id},
         headers=headers,
     )
     item_id = resposta.json()["id"]
@@ -353,8 +359,6 @@ def test_atualizar_item_marcando_devolucao(client, db_session):
         json={
             "id_material": deps["material"].id,
             "id_usuario": deps["usuario"].id,
-            "data_emprestimo": "2026-01-10",
-            "data_devolucao": "2026-02-10",
             "situacao": "Devolvido",
         },
         headers=headers,
@@ -362,6 +366,8 @@ def test_atualizar_item_marcando_devolucao(client, db_session):
 
     assert resposta.status_code == 200
     assert resposta.json()["situacao"] == "Devolvido"
+
+    resposta = client.get(f"/api/emprestimos/{emprestimo_id}", headers=headers)
     assert resposta.json()["data_devolucao"] == "2026-02-10"
     assert resposta.json()["data_devolucao_efetiva"] == date.today().isoformat()
 
@@ -371,36 +377,38 @@ def test_data_devolucao_efetiva_e_limpa_se_situacao_deixa_de_ser_devolvido(clien
     headers = _auth_header(deps["usuario"])
     resposta = client.post(
         "/api/emprestimos",
-        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
-        headers=headers,
-    )
-    emprestimo_id = resposta.json()["id"]
-    resposta = client.post(
-        f"/api/emprestimos/{emprestimo_id}/itens",
         json={
-            "id_material": deps["material"].id,
+            "id_pessoa": deps["pessoa"].id,
             "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
             "data_emprestimo": "2026-01-10",
             "data_devolucao": "2026-02-10",
-            "situacao": "Devolvido",
+            "itens": [
+                {
+                    "id_material": deps["material"].id,
+                    "id_usuario": deps["usuario"].id,
+                    "situacao": "Devolvido",
+                }
+            ],
         },
         headers=headers,
     )
-    item_id = resposta.json()["id"]
+    emprestimo_id = resposta.json()["id"]
     assert resposta.json()["data_devolucao_efetiva"] == date.today().isoformat()
+    item_id = client.get(f"/api/emprestimos/{emprestimo_id}/itens", headers=headers).json()[0]["id"]
 
     resposta = client.put(
         f"/api/emprestimos/{emprestimo_id}/itens/{item_id}",
         json={
             "id_material": deps["material"].id,
             "id_usuario": deps["usuario"].id,
-            "data_emprestimo": "2026-01-10",
-            "data_devolucao": "2026-02-10",
             "situacao": "Renovado",
         },
         headers=headers,
     )
     assert resposta.status_code == 200
+
+    resposta = client.get(f"/api/emprestimos/{emprestimo_id}", headers=headers)
     assert resposta.json()["data_devolucao_efetiva"] is None
 
 
@@ -608,11 +616,11 @@ def test_devolver_marca_emprestimo_itens_e_libera_material(client, db_session):
             "id_pessoa": deps["pessoa"].id,
             "id_usuario": deps["usuario"].id,
             "situacao": "Pendente",
+            "data_emprestimo": "2026-01-10",
             "itens": [
                 {
                     "id_material": deps["material"].id,
                     "id_usuario": deps["usuario"].id,
-                    "data_emprestimo": "2026-01-10",
                     "situacao": "Pendente",
                 }
             ],
@@ -629,10 +637,10 @@ def test_devolver_marca_emprestimo_itens_e_libera_material(client, db_session):
 
     assert resposta.status_code == 200
     assert resposta.json()["situacao"] == "Devolvido"
+    assert resposta.json()["data_devolucao_efetiva"] == "2026-02-15"
 
     itens = client.get(f"/api/emprestimos/{emprestimo_id}/itens", headers=headers).json()
     assert itens[0]["situacao"] == "Devolvido"
-    assert itens[0]["data_devolucao_efetiva"] == "2026-02-15"
 
     material = client.get(f"/api/materiais/{deps['material'].id}", headers=headers).json()
     assert material["situacao"] == "Disponível"
@@ -673,9 +681,7 @@ def test_devolver_sem_data_usa_hoje(client, db_session):
 
     assert resposta.status_code == 200
     assert resposta.json()["situacao"] == "Devolvido"
-
-    itens = client.get(f"/api/emprestimos/{emprestimo_id}/itens", headers=headers).json()
-    assert itens[0]["data_devolucao_efetiva"] == date.today().isoformat()
+    assert resposta.json()["data_devolucao_efetiva"] == date.today().isoformat()
 
 
 def test_devolver_emprestimo_sem_itens_mantem_pendente(client, db_session):
@@ -737,6 +743,9 @@ def test_devolver_nao_reativa_material_ja_inutilizado(client, db_session):
 
 
 def test_devolver_ignora_itens_ja_devolvidos(client, db_session):
+    # Empréstimo já totalmente devolvido: chamar /devolver de novo não deve
+    # mexer em nada (idempotente) — nem tocar em `data_devolucao_efetiva`
+    # já gravada, nem gerar novo histórico de item.
     deps = _criar_dependencias(db_session)
     headers = _auth_header(deps["usuario"])
     resposta = client.post(
@@ -750,27 +759,25 @@ def test_devolver_ignora_itens_ja_devolvidos(client, db_session):
                     "id_material": deps["material"].id,
                     "id_usuario": deps["usuario"].id,
                     "situacao": "Devolvido",
-                    "data_devolucao": "2026-01-01",
                 }
             ],
         },
         headers=headers,
     )
     emprestimo_id = resposta.json()["id"]
+    data_efetiva_original = resposta.json()["data_devolucao_efetiva"]
     item_id = client.get(f"/api/emprestimos/{emprestimo_id}/itens", headers=headers).json()[0]["id"]
-    data_efetiva_original = client.get(f"/api/emprestimos/{emprestimo_id}/itens", headers=headers).json()[
-        0
-    ]["data_devolucao_efetiva"]
 
-    client.post(
+    resposta = client.post(
         f"/api/emprestimos/{emprestimo_id}/devolver",
         json={"id_usuario": deps["usuario"].id, "data_devolucao": "2026-03-01"},
         headers=headers,
     )
 
+    assert resposta.json()["data_devolucao_efetiva"] == data_efetiva_original
+
     item = client.get(f"/api/emprestimos/{emprestimo_id}/itens", headers=headers).json()[0]
     assert item["id"] == item_id
-    assert item["data_devolucao_efetiva"] == data_efetiva_original
 
     historico = client.get(f"/api/emprestimos/{emprestimo_id}/historico", headers=headers).json()
     assert not any(h["tipo"] == "Item alterado" for h in historico)
@@ -780,6 +787,124 @@ def test_devolver_emprestimo_inexistente_retorna_404(client, usuario_legado):
     resposta = client.post(
         "/api/emprestimos/999/devolver",
         json={"id_usuario": 1},
+        headers=_auth_header(usuario_legado),
+    )
+
+    assert resposta.status_code == 404
+
+
+def test_renovar_soma_dias_a_partir_da_data_devolucao_atual(client, db_session):
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    resposta = client.post(
+        "/api/emprestimos",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+            "data_emprestimo": "2026-01-10",
+            "data_devolucao": "2026-02-10",
+            "itens": [
+                {"id_material": deps["material"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"}
+            ],
+        },
+        headers=headers,
+    )
+    emprestimo_id = resposta.json()["id"]
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/renovar",
+        json={"id_usuario": deps["usuario"].id, "dias": 20},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["data_devolucao"] == "2026-03-02"
+    assert corpo["situacao"] == "Renovado"
+
+    itens = client.get(f"/api/emprestimos/{emprestimo_id}/itens", headers=headers).json()
+    assert itens[0]["situacao"] == "Renovado"
+
+    historico = client.get(f"/api/emprestimos/{emprestimo_id}/historico", headers=headers).json()
+    assert any(h["tipo"] == "Renovação" for h in historico)
+
+
+def test_renovar_sem_data_devolucao_usa_hoje_como_base(client, db_session):
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    resposta = client.post(
+        "/api/emprestimos",
+        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        headers=headers,
+    )
+    emprestimo_id = resposta.json()["id"]
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/renovar",
+        json={"id_usuario": deps["usuario"].id, "dias": 5},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 200
+    from datetime import timedelta
+
+    assert resposta.json()["data_devolucao"] == (date.today() + timedelta(days=5)).isoformat()
+
+
+def test_renovar_nao_reabre_item_ja_devolvido(client, db_session):
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    resposta = client.post(
+        "/api/emprestimos",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+            "itens": [
+                {"id_material": deps["material"].id, "id_usuario": deps["usuario"].id, "situacao": "Devolvido"}
+            ],
+        },
+        headers=headers,
+    )
+    emprestimo_id = resposta.json()["id"]
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/renovar",
+        json={"id_usuario": deps["usuario"].id, "dias": 10},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["situacao"] == "Devolvido"
+
+    itens = client.get(f"/api/emprestimos/{emprestimo_id}/itens", headers=headers).json()
+    assert itens[0]["situacao"] == "Devolvido"
+
+
+def test_renovar_dias_invalido_retorna_422(client, db_session):
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    resposta = client.post(
+        "/api/emprestimos",
+        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        headers=headers,
+    )
+    emprestimo_id = resposta.json()["id"]
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/renovar",
+        json={"id_usuario": deps["usuario"].id, "dias": 0},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 422
+
+
+def test_renovar_emprestimo_inexistente_retorna_404(client, usuario_legado):
+    resposta = client.post(
+        "/api/emprestimos/999/renovar",
+        json={"id_usuario": 1, "dias": 10},
         headers=_auth_header(usuario_legado),
     )
 
@@ -912,20 +1037,24 @@ def test_alertas_vencimento_lista_itens_dentro_do_horizonte(client, db_session):
     deps = _criar_dependencias(db_session)
     headers = _auth_header(deps["usuario"])
 
+    vence_em_5_dias = (date.today() + timedelta(days=5)).isoformat()
     resposta = client.post(
         "/api/emprestimos",
-        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+            "data_devolucao": vence_em_5_dias,
+        },
         headers=headers,
     )
     emprestimo_id = resposta.json()["id"]
 
-    vence_em_5_dias = (date.today() + timedelta(days=5)).isoformat()
     client.post(
         f"/api/emprestimos/{emprestimo_id}/itens",
         json={
             "id_material": deps["material"].id,
             "id_usuario": deps["usuario"].id,
-            "data_devolucao": vence_em_5_dias,
             "situacao": "Pendente",
         },
         headers=headers,
@@ -948,20 +1077,24 @@ def test_alertas_vencimento_inclui_vencidos_com_dias_negativos(client, db_sessio
     deps = _criar_dependencias(db_session)
     headers = _auth_header(deps["usuario"])
 
+    venceu_ha_3_dias = (date.today() - timedelta(days=3)).isoformat()
     resposta = client.post(
         "/api/emprestimos",
-        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+            "data_devolucao": venceu_ha_3_dias,
+        },
         headers=headers,
     )
     emprestimo_id = resposta.json()["id"]
 
-    venceu_ha_3_dias = (date.today() - timedelta(days=3)).isoformat()
     client.post(
         f"/api/emprestimos/{emprestimo_id}/itens",
         json={
             "id_material": deps["material"].id,
             "id_usuario": deps["usuario"].id,
-            "data_devolucao": venceu_ha_3_dias,
             "situacao": "Pendente",
         },
         headers=headers,
@@ -976,25 +1109,32 @@ def test_alertas_vencimento_inclui_vencidos_com_dias_negativos(client, db_sessio
 
 
 def test_alertas_vencimento_ignora_itens_devolvidos_e_fora_do_horizonte(client, db_session):
+    # `data_devolucao` é do empréstimo (compartilhada por todos os itens,
+    # ver models.py) — dois empréstimos separados pra isolar os dois
+    # motivos de exclusão: um fora do horizonte, outro com o único item já
+    # devolvido.
     from datetime import timedelta
 
     deps = _criar_dependencias(db_session)
     headers = _auth_header(deps["usuario"])
 
+    longe = (date.today() + timedelta(days=30)).isoformat()
     resposta = client.post(
         "/api/emprestimos",
-        json={"id_pessoa": deps["pessoa"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+            "data_devolucao": longe,
+        },
         headers=headers,
     )
-    emprestimo_id = resposta.json()["id"]
-
-    longe = (date.today() + timedelta(days=30)).isoformat()
+    emprestimo_longe_id = resposta.json()["id"]
     client.post(
-        f"/api/emprestimos/{emprestimo_id}/itens",
+        f"/api/emprestimos/{emprestimo_longe_id}/itens",
         json={
             "id_material": deps["material"].id,
             "id_usuario": deps["usuario"].id,
-            "data_devolucao": longe,
             "situacao": "Pendente",
         },
         headers=headers,
@@ -1011,12 +1151,22 @@ def test_alertas_vencimento_ignora_itens_devolvidos_e_fora_do_horizonte(client, 
     db_session.refresh(outro_material)
 
     perto = (date.today() + timedelta(days=2)).isoformat()
+    resposta = client.post(
+        "/api/emprestimos",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+            "data_devolucao": perto,
+        },
+        headers=headers,
+    )
+    emprestimo_perto_id = resposta.json()["id"]
     client.post(
-        f"/api/emprestimos/{emprestimo_id}/itens",
+        f"/api/emprestimos/{emprestimo_perto_id}/itens",
         json={
             "id_material": outro_material.id,
             "id_usuario": deps["usuario"].id,
-            "data_devolucao": perto,
             "situacao": "Devolvido",
         },
         headers=headers,

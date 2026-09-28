@@ -17,6 +17,7 @@ from app.features.emprestimos.schemas import (
     EmprestimoItemCreate,
     EmprestimoItemResponse,
     EmprestimoItemUpdate,
+    EmprestimoRenovarRequest,
     EmprestimoResponse,
     EmprestimoResumoResponse,
     EmprestimoUpdate,
@@ -105,6 +106,18 @@ def devolver(
         raise HTTPException(status_code=404, detail="Empréstimo não encontrado")
     return EmprestimoResponse.model_validate(
         service.devolver(db, emprestimo, dados.id_usuario, dados.data_devolucao)
+    )
+
+
+@router.post("/{emprestimo_id}/renovar", response_model=EmprestimoResponse)
+def renovar(
+    emprestimo_id: int, dados: EmprestimoRenovarRequest, db: Session = Depends(get_db)
+) -> EmprestimoResponse:
+    emprestimo = service.buscar(db, emprestimo_id)
+    if emprestimo is None:
+        raise HTTPException(status_code=404, detail="Empréstimo não encontrado")
+    return EmprestimoResponse.model_validate(
+        service.renovar(db, emprestimo, dados.id_usuario, dados.dias)
     )
 
 

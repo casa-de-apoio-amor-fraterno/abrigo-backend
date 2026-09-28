@@ -243,6 +243,24 @@ def _reconciliar_acompanhamento(
         _resincronizar_sequencia(sessao_destino, EstadiaAcompanhante)
 
 
+def _preencher_datas_emprestimo(conexao_origem, sessao_destino: Session, confirmar: bool) -> None:
+    """`Emprestimo.data_emprestimo`/`data_devolucao`/`data_devolucao_efetiva`
+    não vêm de `emprestimo` no legado — moraram em `emprestimo_item` até a
+    migração `0029` (ver seu docstring e `transformacoes.datas_emprestimo_por_peso`).
+    Roda depois que `emprestimo`/`emprestimo_item` já foram carregados
+    (`TABELAS_SIMPLES`), escolhendo por empréstimo o item de maior peso
+    (maior `data_devolucao - data_emprestimo`)."""
+    linhas_item = _ler_tabela(conexao_origem, "emprestimo_item")
+    datas_por_emprestimo = t.datas_emprestimo_por_peso(linhas_item)
+
+    print(f"  emprestimo_item -> emprestimo.data_* (por peso): {len(datas_por_emprestimo)} empréstimo(s)")
+
+    if confirmar:
+        for id_emprestimo, datas in datas_por_emprestimo.items():
+            sessao_destino.query(Emprestimo).filter(Emprestimo.id == id_emprestimo).update(datas)
+        sessao_destino.commit()
+
+
 TABELAS_SIMPLES: list[tuple[str, Callable[[dict], dict], type[Base]]] = [
     ("estado", t.transformar_estado, Estado),
     ("hospital", t.transformar_hospital, Hospital),
@@ -278,6 +296,8 @@ def executar(mysql_url: str, confirmar: bool) -> None:
                 _carregar_tabela(
                     conexao_origem, sessao_destino, tabela_origem, transformar, modelo_destino, confirmar
                 )
+
+            _preencher_datas_emprestimo(conexao_origem, sessao_destino, confirmar)
 
             _carregar_contatos(
                 conexao_origem, sessao_destino, "pessoa", "id_pessoa", "id_pessoa", PessoaContato, confirmar
