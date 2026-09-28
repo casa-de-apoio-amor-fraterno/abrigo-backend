@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.security import criar_token_acesso, hash_senha, verificar_senha
@@ -10,7 +10,7 @@ class CredenciaisInvalidas(Exception):
 
 
 def autenticar(db: Session, login: str, senha: str) -> Usuario:
-    usuario = db.scalar(select(Usuario).where(Usuario.login == login))
+    usuario = db.scalar(select(Usuario).where(func.lower(Usuario.login) == login.lower()))
     if usuario is None:
         raise CredenciaisInvalidas
 

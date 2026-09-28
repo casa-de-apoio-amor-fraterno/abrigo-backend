@@ -17,6 +17,13 @@ def test_login_com_senha_legado_texto_plano(client, db_session, usuario_legado):
     assert usuario.senha is None
 
 
+def test_login_ignora_maiusculas_minusculas_no_usuario(client, usuario_legado):
+    resposta = client.post("/api/auth/login", json={"usuario": "JOANA", "senha": "123456"})
+
+    assert resposta.status_code == 200
+    assert resposta.json()["nome"] == "Joana Assistente Social"
+
+
 def test_login_com_senha_ja_migrada(client, usuario_migrado):
     resposta = client.post("/api/auth/login", json={"usuario": "carlos", "senha": "abc12345"})
 
