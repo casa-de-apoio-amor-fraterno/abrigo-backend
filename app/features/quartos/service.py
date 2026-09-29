@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.features.estadias.models import Estadia, EstadiaAcompanhante, SituacaoEstadia
+from app.features.estadias.models import Estadia, EstadiaAcompanhante, SituacaoEstadia, TipoPessoaEstadia
 from app.features.pessoas.models import Pessoa
 from app.features.quartos.models import Quarto
 from app.features.quartos.schemas import QuartoCreate, QuartoUpdate
@@ -24,21 +24,33 @@ def listar_ocupacao(db: Session) -> list[dict]:
     quartos = listar(db, apenas_ativos=True)
 
     linhas = db.execute(
-        select(Estadia.id, Estadia.id_quarto, Estadia.id_pessoa, Estadia.data_entrada, Pessoa.nome)
+        select(
+            Estadia.id,
+            Estadia.id_quarto,
+            Estadia.id_pessoa,
+            Estadia.data_entrada,
+            Pessoa.nome,
+            Estadia.tipo_pessoa,
+        )
         .join(Pessoa, Pessoa.id == Estadia.id_pessoa)
         .where(Estadia.situacao == SituacaoEstadia.EM_ACOMPANHAMENTO)
         .order_by(Estadia.id_quarto, Estadia.data_entrada.desc())
     ).all()
 
     por_quarto: dict[int, list[dict]] = {}
-    for id_estadia, id_quarto, id_pessoa, data_entrada, nome_pessoa in linhas:
+    for id_estadia, id_quarto, id_pessoa, data_entrada, nome_pessoa, tipo_pessoa in linhas:
         por_quarto.setdefault(id_quarto, []).append(
             {
                 "id_estadia": id_estadia,
                 "id_pessoa": id_pessoa,
                 "nome_pessoa": nome_pessoa,
                 "data_entrada": data_entrada,
-                "acompanhante": False,
+                # Titular da estadia com leito próprio já cadastrado como
+                # Acompanhante (tipo_pessoa) — colorido igual ao
+                # EstadiaAcompanhante.ocupa_leito abaixo, embora sejam
+                # conceitos diferentes (ver Estadia.tipo_pessoa vs
+                # EstadiaAcompanhante, em models.py).
+                "acompanhante": tipo_pessoa == TipoPessoaEstadia.ACOMPANHANTE,
             }
         )
 

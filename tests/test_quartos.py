@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
 from app.core.security import criar_token_acesso
-from app.features.estadias.models import Estadia, EstadiaAcompanhante, SituacaoEstadia
+from app.features.estadias.models import Estadia, EstadiaAcompanhante, SituacaoEstadia, TipoPessoaEstadia
 from app.features.pessoas.models import Pessoa
 from app.features.quartos.models import Quarto
 from app.features.usuarios.models import Usuario
@@ -246,3 +246,36 @@ def test_listar_ocupacao_com_acompanhante_ocupando_leito(client, db_session):
     assert ocupantes_por_pessoa[paciente.id]["acompanhante"] is False
     assert ocupantes_por_pessoa[acompanhante_pessoa.id]["acompanhante"] is True
     assert ocupantes_por_pessoa[acompanhante_pessoa.id]["id_estadia"] == estadia.id
+
+
+def test_listar_ocupacao_com_titular_tipo_acompanhante(client, db_session):
+    # Estadia com leito próprio cujo tipo_pessoa é Acompanhante (não um
+    # EstadiaAcompanhante.ocupa_leito) também deve vir marcada
+    # `acompanhante=True`, pro front colorir o leito igual.
+    pessoa = Pessoa(nome="Ana Souza", data_nascimento=date(1985, 4, 10), data_cadastro=date.today())
+    usuario = Usuario(login="joana3", nome="Joana", perfil="geral", senha="123456")
+    quarto = Quarto(numero="40", leito=2, ativo=True)
+    db_session.add_all([pessoa, usuario, quarto])
+    db_session.commit()
+    db_session.refresh(pessoa)
+    db_session.refresh(usuario)
+    db_session.refresh(quarto)
+
+    db_session.add(
+        Estadia(
+            id_pessoa=pessoa.id,
+            id_quarto=quarto.id,
+            id_usuario=usuario.id,
+            data_entrada=datetime(2026, 1, 1),
+            situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+            tipo_pessoa=TipoPessoaEstadia.ACOMPANHANTE,
+        )
+    )
+    db_session.commit()
+
+    resposta = client.get("/api/quartos/ocupacao", headers=_auth_header(usuario))
+
+    assert resposta.status_code == 200
+    quarto_40 = next(q for q in resposta.json() if q["numero"] == "40")
+    assert len(quarto_40["ocupantes"]) == 1
+    assert quarto_40["ocupantes"][0]["acompanhante"] is True
