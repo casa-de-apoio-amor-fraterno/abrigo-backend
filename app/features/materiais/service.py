@@ -67,6 +67,27 @@ def inutilizar(db: Session, material: Material, motivo_baixa: str | None) -> Mat
     return material
 
 
+class MaterialInutilizado(Exception):
+    pass
+
+
+def alocar(db: Session, material: Material, id_local: int) -> Material:
+    """Move o material pra outro `MaterialLocal` (ex.: Bazar) marcando a
+    situação como "Alocado" — mesma ideia de `_sincronizar_situacao_material`
+    em emprestimos/service.py (situação/local do material são sempre
+    resultado de um evento, nunca texto livre digitado direto no
+    cadastro). Material "Inutilizado" nunca pode ser realocado (baixa é
+    definitiva, mesma regra de `_sincronizar_situacao_material`)."""
+    if material.situacao == "Inutilizado":
+        raise MaterialInutilizado
+    material.situacao = "Alocado"
+    material.id_local = id_local
+    material.disponivel_emprestimo = False
+    db.commit()
+    db.refresh(material)
+    return material
+
+
 TIPOS_FOTO_PERMITIDOS = {"image/jpeg", "image/png", "image/webp"}
 TAMANHO_MAXIMO_FOTO_BYTES = 5 * 1024 * 1024
 TAMANHO_THUMB = (200, 200)

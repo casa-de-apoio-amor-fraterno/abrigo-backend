@@ -50,3 +50,7 @@ class MaterialResponse(MaterialBase):
 
 class MaterialInutilizarRequest(BaseModel):
     motivo_baixa: str | None = None
+
+
+class MaterialAlocarRequest(BaseModel):
+    id_local: int

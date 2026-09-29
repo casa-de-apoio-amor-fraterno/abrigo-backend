@@ -124,3 +124,61 @@ def test_buscar_material_inexistente(client, usuario_legado):
     resposta = client.get("/api/materiais/999", headers=_auth_header(usuario_legado))
 
     assert resposta.status_code == 404
+
+
+def test_alocar_material(client, db_session, usuario_legado, local_casa):
+    from app.features.materiais_locais.models import MaterialLocal
+
+    bazar = MaterialLocal(nome="Bazar")
+    db_session.add(bazar)
+    db_session.commit()
+    db_session.refresh(bazar)
+
+    headers = _auth_header(usuario_legado)
+    resposta = client.post(
+        "/api/materiais",
+        json={"descricao": "Andador", "situacao": "Disponível", "id_local": local_casa.id},
+        headers=headers,
+    )
+    material_id = resposta.json()["id"]
+
+    resposta = client.post(
+        f"/api/materiais/{material_id}/alocar", json={"id_local": bazar.id}, headers=headers
+    )
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["situacao"] == "Alocado"
+    assert corpo["id_local"] == bazar.id
+    assert corpo["disponivel_emprestimo"] is False
+
+
+def test_alocar_material_inutilizado_e_rejeitado(client, usuario_legado, local_casa):
+    headers = _auth_header(usuario_legado)
+    resposta = client.post(
+        "/api/materiais",
+        json={"descricao": "Cadeira", "situacao": "Disponível", "id_local": local_casa.id},
+        headers=headers,
+    )
+    material_id = resposta.json()["id"]
+    client.post(f"/api/materiais/{material_id}/inutilizar", json={}, headers=headers)
+
+    resposta = client.post(
+        f"/api/materiais/{material_id}/alocar", json={"id_local": local_casa.id}, headers=headers
+    )
+
+    assert resposta.status_code == 400
+
+
+def test_alocar_material_local_inexistente(client, usuario_legado, local_casa):
+    headers = _auth_header(usuario_legado)
+    resposta = client.post(
+        "/api/materiais",
+        json={"descricao": "Andador", "situacao": "Disponível", "id_local": local_casa.id},
+        headers=headers,
+    )
+    material_id = resposta.json()["id"]
+
+    resposta = client.post(f"/api/materiais/{material_id}/alocar", json={"id_local": 999}, headers=headers)
+
+    assert resposta.status_code == 404

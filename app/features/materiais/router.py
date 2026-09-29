@@ -6,12 +6,14 @@ from app.core.database import get_db
 from app.features.auth.dependencies import usuario_atual
 from app.features.materiais import service
 from app.features.materiais.schemas import (
+    MaterialAlocarRequest,
     MaterialCreate,
     MaterialInutilizarRequest,
     MaterialResponse,
     MaterialResumoResponse,
     MaterialUpdate,
 )
+from app.features.materiais_locais import service as materiais_locais_service
 
 router = APIRouter(dependencies=[Depends(usuario_atual)])
 
@@ -71,6 +73,19 @@ def inutilizar(
     if material is None:
         raise HTTPException(status_code=404, detail="Material não encontrado")
     return MaterialResponse.model_validate(service.inutilizar(db, material, dados.motivo_baixa))
+
+
+@router.post("/{material_id}/alocar", response_model=MaterialResponse)
+def alocar(material_id: int, dados: MaterialAlocarRequest, db: Session = Depends(get_db)) -> MaterialResponse:
+    material = service.buscar(db, material_id)
+    if material is None:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+    if materiais_locais_service.buscar(db, dados.id_local) is None:
+        raise HTTPException(status_code=404, detail="Local não encontrado")
+    try:
+        return MaterialResponse.model_validate(service.alocar(db, material, dados.id_local))
+    except service.MaterialInutilizado as exc:
+        raise HTTPException(status_code=400, detail="Material inutilizado não pode ser alocado") from exc
 
 
 @router.get("/{material_id}/foto")
