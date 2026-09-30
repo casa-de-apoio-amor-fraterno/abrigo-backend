@@ -308,6 +308,79 @@ def gerar_pdf_emprestimos(
     return pdf.gerar_bytes()
 
 
+class MaterialNaoEncontrado(Exception):
+    pass
+
+
+def _itens_historico_material(db: Session, id_material: int) -> list[tuple[EmprestimoItem, Emprestimo, Pessoa | None]]:
+    # Todos os empréstimos (ativos) em que o material apareceu, do mais
+    # recente pro mais antigo. Um empréstimo sem `data_emprestimo` (dado
+    # legado) entra no fim da lista, sem data.
+    linhas = db.execute(
+        select(EmprestimoItem, Emprestimo, Pessoa)
+        .join(Emprestimo, EmprestimoItem.id_emprestimo == Emprestimo.id)
+        .outerjoin(Pessoa, Pessoa.id == Emprestimo.id_pessoa)
+        .where(EmprestimoItem.id_material == id_material, Emprestimo.ativo.is_(True))
+        .order_by(Emprestimo.data_emprestimo.desc().nulls_last(), Emprestimo.id.desc())
+    ).all()
+    return [(item, emprestimo, pessoa) for item, emprestimo, pessoa in linhas]
+
+
+def gerar_pdf_historico_material(db: Session, id_material: int) -> bytes:
+    material = db.get(Material, id_material)
+    if material is None:
+        raise MaterialNaoEncontrado()
+
+    registros = _itens_historico_material(db, id_material)
+    linhas = [
+        [
+            emprestimo.data_emprestimo.strftime("%d/%m/%Y") if emprestimo.data_emprestimo else "-",
+            pessoa.nome if pessoa else "-",
+            (pessoa.telefone_principal if pessoa else None) or "-",
+            emprestimo.numero_contrato or "-",
+            emprestimo.data_devolucao.strftime("%d/%m/%Y") if emprestimo.data_devolucao else "-",
+            emprestimo.data_devolucao_efetiva.strftime("%d/%m/%Y") if emprestimo.data_devolucao_efetiva else "-",
+            item.situacao or emprestimo.situacao,
+        ]
+        for item, emprestimo, pessoa in registros
+    ]
+
+    identificacao = material.descricao
+    if material.numero_patrimonio:
+        identificacao += f" - Nº patrimônio {material.numero_patrimonio}"
+    pdf = DocumentoPDF(rodape=_RODAPE, orientation="L")
+    pdf.titulo_documento(f"RELATÓRIO DE PESSOAS ATENDIDAS POR ITEM - {identificacao}\n{_gerado_em()}")
+    pdf.tabela_relatorio(
+        ["Data empréstimo", "Beneficiário", "Telefone", "Nº Contrato", "Devolução prevista", "Devolvido em", "Situação"],
+        linhas,
+        larguras=[12, 28, 15, 10, 12, 12, 11],
+    )
+    pdf.totais(
+        [
+            f"Total de empréstimos do item: {len(linhas)}",
+            f"Total de pessoas atendidas: {len({e.id_pessoa for _, e, _ in registros})}",
+        ]
+    )
+    return pdf.gerar_bytes()
+
+
+def resumo_historico_material(db: Session, id_material: int) -> list[RelatorioResumoItem]:
+    material = db.get(Material, id_material)
+    if material is None:
+        raise MaterialNaoEncontrado()
+    registros = _itens_historico_material(db, id_material)
+    datas = [e.data_emprestimo for _, e, _ in registros if e.data_emprestimo]
+    return [
+        RelatorioResumoItem(rotulo="Empréstimos do item", valor=str(len(registros))),
+        RelatorioResumoItem(
+            rotulo="Pessoas atendidas", valor=str(len({e.id_pessoa for _, e, _ in registros}))
+        ),
+        RelatorioResumoItem(
+            rotulo="Último empréstimo", valor=max(datas).strftime("%d/%m/%Y") if datas else "-"
+        ),
+    ]
+
+
 def resumo_pessoas(db: Session, periodo: PeriodoRelatorio) -> list[RelatorioResumoItem]:
     total_geral = db.scalar(select(func.count()).select_from(Pessoa).where(Pessoa.ativo.is_(True)))
     no_periodo = db.scalar(

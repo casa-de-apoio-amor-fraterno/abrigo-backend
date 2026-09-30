@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -55,6 +55,23 @@ def resumo_materiais(db: Session = Depends(get_db)) -> RelatorioResumoResponse:
 @router.get("/materiais/pdf")
 def relatorio_materiais(db: Session = Depends(get_db)) -> Response:
     return Response(content=service.gerar_pdf_materiais(db), media_type="application/pdf")
+
+
+@router.get("/historico-material/resumo", response_model=RelatorioResumoResponse)
+def resumo_historico_material(id_material: int, db: Session = Depends(get_db)) -> RelatorioResumoResponse:
+    try:
+        return RelatorioResumoResponse(itens=service.resumo_historico_material(db, id_material))
+    except service.MaterialNaoEncontrado as exc:
+        raise HTTPException(status_code=404, detail="Material não encontrado") from exc
+
+
+@router.get("/historico-material/pdf")
+def relatorio_historico_material(id_material: int, db: Session = Depends(get_db)) -> Response:
+    try:
+        conteudo = service.gerar_pdf_historico_material(db, id_material)
+    except service.MaterialNaoEncontrado as exc:
+        raise HTTPException(status_code=404, detail="Material não encontrado") from exc
+    return Response(content=conteudo, media_type="application/pdf")
 
 
 @router.get("/emprestimos/resumo", response_model=RelatorioResumoResponse)
