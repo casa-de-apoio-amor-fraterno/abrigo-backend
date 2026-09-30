@@ -116,9 +116,11 @@ def renovar(
     emprestimo = service.buscar(db, emprestimo_id)
     if emprestimo is None:
         raise HTTPException(status_code=404, detail="Empréstimo não encontrado")
-    return EmprestimoResponse.model_validate(
-        service.renovar(db, emprestimo, dados.id_usuario, dados.dias)
-    )
+    try:
+        renovado = service.renovar(db, emprestimo, dados.id_usuario, dados.dias, dados.ids_itens_devolver)
+    except service.RenovacaoInvalida as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return EmprestimoResponse.model_validate(renovado)
 
 
 @router.get("/{emprestimo_id}/itens", response_model=list[EmprestimoItemResponse])

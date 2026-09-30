@@ -1176,3 +1176,82 @@ def test_alertas_vencimento_ignora_itens_devolvidos_e_fora_do_horizonte(client, 
 
     assert resposta.status_code == 200
     assert resposta.json() == []
+
+
+def _criar_emprestimo_com_dois_itens(client, db_session):
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    segundo = Material(
+        descricao="Bengala", situacao="Disponível", id_local=deps["local_casa"].id, disponivel_emprestimo=True
+    )
+    db_session.add(segundo)
+    db_session.commit()
+    resposta = client.post(
+        "/api/emprestimos",
+        json={
+            "id_pessoa": deps["pessoa"].id,
+            "id_usuario": deps["usuario"].id,
+            "situacao": "Pendente",
+            "data_emprestimo": "2026-01-10",
+            "data_devolucao": "2026-02-10",
+            "itens": [
+                {"id_material": deps["material"].id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+                {"id_material": segundo.id, "id_usuario": deps["usuario"].id, "situacao": "Pendente"},
+            ],
+        },
+        headers=headers,
+    )
+    assert resposta.status_code == 201
+    return deps, headers, resposta.json()["id"]
+
+
+def test_renovar_devolvendo_parte_dos_itens(client, db_session):
+    deps, headers, emprestimo_id = _criar_emprestimo_com_dois_itens(client, db_session)
+    itens = client.get(f"/api/emprestimos/{emprestimo_id}/itens", headers=headers).json()
+    id_devolver = itens[0]["id"]
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/renovar",
+        json={"id_usuario": deps["usuario"].id, "dias": 20, "ids_itens_devolver": [id_devolver]},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["situacao"] == "Renovado"
+    assert resposta.json()["data_devolucao"] == "2026-03-02"
+
+    itens = {i["id"]: i for i in client.get(f"/api/emprestimos/{emprestimo_id}/itens", headers=headers).json()}
+    assert itens[id_devolver]["situacao"] == "Devolvido"
+    assert itens[id_devolver]["renovacao"].startswith("Devolvido em ")
+    outro = next(i for i in itens.values() if i["id"] != id_devolver)
+    assert outro["situacao"] == "Renovado"
+    assert outro["renovacao"] == "Renovado para dia 02/03/2026"
+
+    db_session.expire_all()
+    assert db_session.get(Material, itens[id_devolver]["id_material"]).situacao == "Disponível"
+    assert db_session.get(Material, outro["id_material"]).situacao == "Emprestado"
+
+
+def test_renovar_devolvendo_todos_os_itens_retorna_422(client, db_session):
+    deps, headers, emprestimo_id = _criar_emprestimo_com_dois_itens(client, db_session)
+    ids = [i["id"] for i in client.get(f"/api/emprestimos/{emprestimo_id}/itens", headers=headers).json()]
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/renovar",
+        json={"id_usuario": deps["usuario"].id, "dias": 20, "ids_itens_devolver": ids},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 422
+
+
+def test_renovar_item_de_outro_emprestimo_retorna_422(client, db_session):
+    deps, headers, emprestimo_id = _criar_emprestimo_com_dois_itens(client, db_session)
+
+    resposta = client.post(
+        f"/api/emprestimos/{emprestimo_id}/renovar",
+        json={"id_usuario": deps["usuario"].id, "dias": 20, "ids_itens_devolver": [99999]},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 422

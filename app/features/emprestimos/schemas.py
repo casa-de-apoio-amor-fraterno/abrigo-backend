@@ -89,6 +89,11 @@ class EmprestimoRenovarRequest(BaseModel):
     # Quantos dias somar à data prevista de devolução atual (ou a partir de
     # hoje, se o empréstimo ainda não tinha prazo) — ver `service.renovar`.
     dias: int = Field(gt=0)
+    # Itens do empréstimo que voltaram agora, em vez de serem renovados
+    # (pedido do time, 2026-09-30: histórico antigo mostra renovações em que
+    # parte dos itens foi devolvida e parte renovada). Todo item não
+    # devolvido que *não* estiver aqui é renovado — ver `service.renovar`.
+    ids_itens_devolver: list[int] = Field(default_factory=list)
 
 
 class EmprestimoResumoResponse(BaseModel):

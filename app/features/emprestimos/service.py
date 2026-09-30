@@ -420,37 +420,77 @@ def devolver(
     return emprestimo
 
 
-def renovar(db: Session, emprestimo: Emprestimo, id_usuario: int, dias: int) -> Emprestimo:
+class RenovacaoInvalida(Exception):
+    pass
+
+
+def renovar(
+    db: Session,
+    emprestimo: Emprestimo,
+    id_usuario: int,
+    dias: int,
+    ids_itens_devolver: list[int] | None = None,
+) -> Emprestimo:
     # Ação rápida pedida pelo time (2026-09-28, painel de vencimentos da
     # tela Início): soma `dias` à data prevista de devolução (a partir de
-    # hoje, se o empréstimo ainda não tinha prazo) e marca todo item ainda
-    # não devolvido como "Renovado" — mesma prioridade de
+    # hoje, se o empréstimo ainda não tinha prazo) e marca os itens ainda
+    # não devolvidos como "Renovado" — mesma prioridade de
     # `_recalcular_situacao` (Renovado vence sobre Pendente), então o
     # cabeçalho reflete a renovação. Itens já "Devolvido" não são tocados
     # (renovar não reabre um item que já voltou).
-    base = emprestimo.data_devolucao or date.today()
-    nova_data_devolucao = base + timedelta(days=dias)
-    emprestimo.data_devolucao = nova_data_devolucao
-
+    #
+    # 2026-09-30: `ids_itens_devolver` permite devolver parte dos itens na
+    # mesma renovação (o histórico real mostra renovações em que um item
+    # voltou e outro foi renovado) — esses vão pra "Devolvido" (libera o
+    # material, ver `_sincronizar_situacao_material`) e só o restante é
+    # renovado. `EmprestimoItem.renovacao` (texto livre no legado) recebe o
+    # mesmo formato observado nos dados reais.
     itens = list(
         db.scalars(select(EmprestimoItem).where(EmprestimoItem.id_emprestimo == emprestimo.id)).all()
     )
-    for item in itens:
-        if item.situacao != "Devolvido":
-            item.situacao = "Renovado"
+    itens_por_id = {item.id: item for item in itens}
+    ids_devolver = set(ids_itens_devolver or [])
+
+    for item_id in ids_devolver:
+        item = itens_por_id.get(item_id)
+        if item is None:
+            raise RenovacaoInvalida(f"Item {item_id} não pertence a este empréstimo.")
+        if item.situacao == "Devolvido":
+            raise RenovacaoInvalida(f"Item {item_id} já foi devolvido.")
+
+    itens_a_renovar = [i for i in itens if i.situacao != "Devolvido" and i.id not in ids_devolver]
+    if ids_devolver and not itens_a_renovar:
+        raise RenovacaoInvalida(
+            "Nenhum item para renovar — para devolver todos os itens, use a finalização do empréstimo."
+        )
+
+    hoje = date.today()
+    base = emprestimo.data_devolucao or hoje
+    nova_data_devolucao = base + timedelta(days=dias)
+    emprestimo.data_devolucao = nova_data_devolucao
+
+    itens_devolvidos = [itens_por_id[i] for i in ids_devolver]
+    for item in itens_devolvidos:
+        item.situacao = "Devolvido"
+        item.renovacao = f"Devolvido em {hoje.strftime('%d/%m/%Y')}"
+    for item in itens_a_renovar:
+        item.situacao = "Renovado"
+        item.renovacao = f"Renovado para dia {nova_data_devolucao.strftime('%d/%m/%Y')}"
 
     db.commit()
+    for item in itens_devolvidos:
+        _sincronizar_situacao_material(db, item)
     db.refresh(emprestimo)
     _recalcular_situacao(db, emprestimo)
 
-    _registrar_historico(
-        db,
-        emprestimo.id,
-        id_usuario,
-        "Renovação",
+    descricao = (
         f"Prazo renovado por {dias} dia(s) — nova devolução prevista: "
-        f"{nova_data_devolucao.strftime('%d/%m/%Y')}.",
+        f"{nova_data_devolucao.strftime('%d/%m/%Y')}."
     )
+    if itens_devolvidos:
+        devolvidos = ", ".join(_descricao_item(db, i) for i in itens_devolvidos)
+        descricao += f" Devolvido(s) na renovação: {devolvidos}."
+    _registrar_historico(db, emprestimo.id, id_usuario, "Renovação", descricao)
 
     return emprestimo
 
@@ -812,7 +852,12 @@ def criar_contrato(
         db.scalars(select(EmprestimoItem).where(EmprestimoItem.id_emprestimo == emprestimo.id)).all()
     )
     if tipo == "Renovação":
-        pdf_bytes = _gerar_pdf_termo_renovacao(db, emprestimo, pessoa, itens, contrato_original, assinatura_png)
+        # O termo aditivo só cobre o que foi renovado — itens devolvidos na
+        # mesma renovação (ver `renovar`) não entram no texto.
+        itens_renovados = [i for i in itens if i.situacao == "Renovado"] or itens
+        pdf_bytes = _gerar_pdf_termo_renovacao(
+            db, emprestimo, pessoa, itens_renovados, contrato_original, assinatura_png
+        )
     else:
         pdf_bytes = _gerar_pdf_contrato(db, emprestimo, pessoa, usuario, itens, assinatura_png)
 
