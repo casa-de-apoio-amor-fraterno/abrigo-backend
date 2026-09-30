@@ -50,6 +50,7 @@ def listar(
         skip=skip,
         take=take,
     )
+    service.anexar_itens_resumo(db, itens)
     return {"items": [EmprestimoResumoResponse.model_validate(e) for e in itens], "total": total}
 
 

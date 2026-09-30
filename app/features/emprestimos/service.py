@@ -183,6 +183,28 @@ def listar(
     return list(itens), total
 
 
+def anexar_itens_resumo(db: Session, emprestimos: list[Emprestimo]) -> list[Emprestimo]:
+    """Anexa `itens` (atributo transiente, com material/patrimônio já
+    resolvidos) a cada empréstimo da listagem — uma consulta só pra todos,
+    sem N+1."""
+    if not emprestimos:
+        return emprestimos
+    itens = list(
+        db.scalars(
+            select(EmprestimoItem)
+            .where(EmprestimoItem.id_emprestimo.in_({e.id for e in emprestimos}))
+            .order_by(EmprestimoItem.id)
+        )
+    )
+    _anexar_material(db, itens)
+    por_emprestimo: dict[int, list[EmprestimoItem]] = {}
+    for item in itens:
+        por_emprestimo.setdefault(item.id_emprestimo, []).append(item)
+    for emprestimo in emprestimos:
+        emprestimo.itens = por_emprestimo.get(emprestimo.id, [])  # type: ignore[attr-defined]
+    return emprestimos
+
+
 def buscar(db: Session, emprestimo_id: int) -> Emprestimo | None:
     return db.get(Emprestimo, emprestimo_id)
 

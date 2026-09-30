@@ -96,6 +96,16 @@ class EmprestimoRenovarRequest(BaseModel):
     ids_itens_devolver: list[int] = Field(default_factory=list)
 
 
+class EmprestimoItemResumoResponse(BaseModel):
+    # Versão enxuta do item pra listagem de empréstimos — anexada pelo
+    # service (`anexar_itens_resumo`), sem round-trip extra por empréstimo.
+    model_config = ConfigDict(from_attributes=True)
+
+    situacao: str | None
+    descricao_material: str
+    numero_patrimonio_material: str | None
+
+
 class EmprestimoResumoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -104,6 +114,7 @@ class EmprestimoResumoResponse(BaseModel):
     situacao: SituacaoEmprestimo
     numero_contrato: str | None
     data_devolucao: date | None
+    itens: list[EmprestimoItemResumoResponse] = Field(default_factory=list)
 
 
 class EmprestimoResponse(EmprestimoBase):
