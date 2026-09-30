@@ -1268,3 +1268,20 @@ def test_listar_inclui_itens_com_material_e_patrimonio(client, db_session):
     itens = resposta.json()["items"][0]["itens"]
     assert {i["descricao_material"] for i in itens} == {"Cadeira de rodas", "Bengala"}
     assert {i["numero_patrimonio_material"] for i in itens} == {"10945", None}
+
+
+def test_listar_busca_por_material_e_patrimonio(client, db_session):
+    deps, headers, emprestimo_id = _criar_emprestimo_com_dois_itens(client, db_session)
+    deps["material"].numero_patrimonio = "10945"
+    db_session.commit()
+
+    def ids(busca):
+        resposta = client.get("/api/emprestimos", params={"busca": busca}, headers=headers)
+        assert resposta.status_code == 200
+        return [e["id"] for e in resposta.json()["items"]]
+
+    assert ids("Bengala") == [emprestimo_id]
+    assert ids("1094") == [emprestimo_id]
+    assert ids("Maria") == [emprestimo_id]
+    assert ids("inexistente") == []
+    assert client.get("/api/emprestimos", params={"busca": "a"}, headers=headers).json()["total"] == 1

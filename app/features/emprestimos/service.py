@@ -1,6 +1,6 @@
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.features.emprestimos.models import (
@@ -170,8 +170,17 @@ def listar(
     if busca:
         # Nome da pessoa não está em Emprestimo — precisa do join só
         # quando a busca é usada, pra não pesar a listagem padrão.
+        # Também acha por descrição/nº patrimônio de qualquer item do
+        # empréstimo — subconsulta (IN) em vez de join, pra um empréstimo
+        # com vários itens casando não aparecer duplicado.
+        termo = f"%{busca}%"
+        ids_por_material = (
+            select(EmprestimoItem.id_emprestimo)
+            .join(Material, Material.id == EmprestimoItem.id_material)
+            .where(or_(Material.descricao.ilike(termo), Material.numero_patrimonio.ilike(termo)))
+        )
         consulta = consulta.join(Pessoa, Pessoa.id == Emprestimo.id_pessoa).where(
-            Pessoa.nome.ilike(f"%{busca}%")
+            or_(Pessoa.nome.ilike(termo), Emprestimo.id.in_(ids_por_material))
         )
     if data_devolucao_inicio is not None:
         consulta = consulta.where(Emprestimo.data_devolucao >= data_devolucao_inicio)
