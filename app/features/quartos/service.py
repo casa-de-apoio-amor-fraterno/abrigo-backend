@@ -51,6 +51,7 @@ def listar_ocupacao(db: Session) -> list[dict]:
                 # conceitos diferentes (ver Estadia.tipo_pessoa vs
                 # EstadiaAcompanhante, em models.py).
                 "acompanhante": tipo_pessoa == TipoPessoaEstadia.ACOMPANHANTE,
+                "id_estadia_acompanhante": None,
             }
         )
 
@@ -64,6 +65,7 @@ def listar_ocupacao(db: Session) -> list[dict]:
         select(
             Estadia.id,
             Estadia.id_quarto,
+            EstadiaAcompanhante.id,
             EstadiaAcompanhante.id_pessoa,
             EstadiaAcompanhante.data_entrada,
             Pessoa.nome,
@@ -76,7 +78,7 @@ def listar_ocupacao(db: Session) -> list[dict]:
             Estadia.situacao == SituacaoEstadia.EM_ACOMPANHAMENTO,
         )
     ).all()
-    for id_estadia, id_quarto, id_pessoa, data_entrada, nome_pessoa in linhas_acompanhante:
+    for id_estadia, id_quarto, id_acompanhante, id_pessoa, data_entrada, nome_pessoa in linhas_acompanhante:
         por_quarto.setdefault(id_quarto, []).append(
             {
                 "id_estadia": id_estadia,
@@ -84,6 +86,7 @@ def listar_ocupacao(db: Session) -> list[dict]:
                 "nome_pessoa": nome_pessoa,
                 "data_entrada": data_entrada,
                 "acompanhante": True,
+                "id_estadia_acompanhante": id_acompanhante,
             }
         )
 

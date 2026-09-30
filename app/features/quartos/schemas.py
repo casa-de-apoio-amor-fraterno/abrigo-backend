@@ -38,6 +38,10 @@ class QuartoOcupanteResponse(BaseModel):
     # (`EstadiaAcompanhante.ocupa_leito`), não pelo paciente/titular da
     # estadia — usado pra colorir o leito diferente no painel de ocupação.
     acompanhante: bool = False
+    # Preenchido só quando o leito é de um `EstadiaAcompanhante.ocupa_leito`
+    # — é o id desse registro, usado pra registrar a saída só dele (sem
+    # finalizar a estadia do paciente, que `id_estadia` aponta).
+    id_estadia_acompanhante: int | None = None
 
 
 class QuartoOcupacaoResponse(BaseModel):

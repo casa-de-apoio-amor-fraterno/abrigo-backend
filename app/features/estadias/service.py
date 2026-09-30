@@ -225,6 +225,24 @@ def encerrar(
     return estadia
 
 
+def buscar_acompanhante(db: Session, estadia_id: int, acompanhante_id: int) -> EstadiaAcompanhante | None:
+    acompanhante = db.get(EstadiaAcompanhante, acompanhante_id)
+    if acompanhante is None or acompanhante.id_estadia != estadia_id:
+        return None
+    return acompanhante
+
+
+def encerrar_acompanhante(
+    db: Session, acompanhante: EstadiaAcompanhante, data_saida: datetime | None = None
+) -> EstadiaAcompanhante:
+    # Saída só do acompanhante (ex.: libera o leito que ele ocupa no painel
+    # da tela Início) — a estadia do paciente segue em acompanhamento.
+    acompanhante.data_saida = data_saida or datetime.now(UTC).replace(tzinfo=None)
+    db.commit()
+    db.refresh(acompanhante)
+    return acompanhante
+
+
 def listar_acompanhantes(db: Session, estadia_id: int) -> list[EstadiaAcompanhante]:
     consulta = select(EstadiaAcompanhante).where(EstadiaAcompanhante.id_estadia == estadia_id)
     return list(db.scalars(consulta.order_by(EstadiaAcompanhante.data_entrada)).all())

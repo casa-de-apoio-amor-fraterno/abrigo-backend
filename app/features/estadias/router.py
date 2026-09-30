@@ -7,6 +7,7 @@ from app.features.estadias import service
 from app.features.estadias.models import SituacaoEstadia, TipoPessoaEstadia
 from app.features.estadias.schemas import (
     EstadiaAcompanhanteCreate,
+    EstadiaAcompanhanteEncerrarRequest,
     EstadiaAcompanhanteResponse,
     EstadiaCreate,
     EstadiaEncerrarRequest,
@@ -117,6 +118,23 @@ def adicionar_acompanhante(
         )
     return EstadiaAcompanhanteResponse.model_validate(
         service.adicionar_acompanhante(db, estadia_id, dados)
+    )
+
+
+@router.post(
+    "/{estadia_id}/acompanhantes/{acompanhante_id}/encerrar", response_model=EstadiaAcompanhanteResponse
+)
+def encerrar_acompanhante(
+    estadia_id: int,
+    acompanhante_id: int,
+    dados: EstadiaAcompanhanteEncerrarRequest = EstadiaAcompanhanteEncerrarRequest(),
+    db: Session = Depends(get_db),
+) -> EstadiaAcompanhanteResponse:
+    acompanhante = service.buscar_acompanhante(db, estadia_id, acompanhante_id)
+    if acompanhante is None:
+        raise HTTPException(status_code=404, detail="Acompanhante não encontrado")
+    return EstadiaAcompanhanteResponse.model_validate(
+        service.encerrar_acompanhante(db, acompanhante, dados.data_saida)
     )
 
 

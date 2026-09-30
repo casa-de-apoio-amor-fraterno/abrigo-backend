@@ -226,15 +226,14 @@ def test_listar_ocupacao_com_acompanhante_ocupando_leito(client, db_session):
     db_session.commit()
     db_session.refresh(estadia)
 
-    db_session.add(
-        EstadiaAcompanhante(
-            id_estadia=estadia.id,
-            id_pessoa=acompanhante_pessoa.id,
-            data_entrada=datetime(2026, 1, 1),
-            grau_parentesco="Filho",
-            ocupa_leito=True,
-        )
+    vinculo = EstadiaAcompanhante(
+        id_estadia=estadia.id,
+        id_pessoa=acompanhante_pessoa.id,
+        data_entrada=datetime(2026, 1, 1),
+        grau_parentesco="Filho",
+        ocupa_leito=True,
     )
+    db_session.add(vinculo)
     db_session.commit()
 
     resposta = client.get("/api/quartos/ocupacao", headers=_auth_header(usuario))
@@ -246,6 +245,8 @@ def test_listar_ocupacao_com_acompanhante_ocupando_leito(client, db_session):
     assert ocupantes_por_pessoa[paciente.id]["acompanhante"] is False
     assert ocupantes_por_pessoa[acompanhante_pessoa.id]["acompanhante"] is True
     assert ocupantes_por_pessoa[acompanhante_pessoa.id]["id_estadia"] == estadia.id
+    assert ocupantes_por_pessoa[acompanhante_pessoa.id]["id_estadia_acompanhante"] == vinculo.id
+    assert ocupantes_por_pessoa[paciente.id]["id_estadia_acompanhante"] is None
 
 
 def test_listar_ocupacao_com_titular_tipo_acompanhante(client, db_session):

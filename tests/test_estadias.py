@@ -677,3 +677,39 @@ def test_historico_de_estadia_inexistente(client, usuario_legado):
     resposta = client.get("/api/estadias/999/historico", headers=_auth_header(usuario_legado))
 
     assert resposta.status_code == 404
+
+
+def test_encerrar_acompanhante_nao_finaliza_estadia_do_paciente(client, db_session):
+    deps = _criar_dependencias(db_session)
+    headers = _auth_header(deps["usuario"])
+    acompanhante_pessoa = Pessoa(nome="José", data_nascimento=date(1988, 5, 20), data_cadastro=date.today())
+    db_session.add(acompanhante_pessoa)
+    db_session.commit()
+    estadia = Estadia(
+        id_pessoa=deps["pessoa"].id,
+        id_quarto=deps["quarto"].id,
+        id_usuario=deps["usuario"].id,
+        data_entrada=datetime(2026, 1, 1),
+        situacao=SituacaoEstadia.EM_ACOMPANHAMENTO,
+    )
+    db_session.add(estadia)
+    db_session.commit()
+    vinculo = EstadiaAcompanhante(
+        id_estadia=estadia.id, id_pessoa=acompanhante_pessoa.id, data_entrada=datetime(2026, 1, 1), ocupa_leito=True
+    )
+    db_session.add(vinculo)
+    db_session.commit()
+
+    resposta = client.post(
+        f"/api/estadias/{estadia.id}/acompanhantes/{vinculo.id}/encerrar",
+        json={"data_saida": "2026-01-05T10:00:00"},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["data_saida"] == "2026-01-05T10:00:00"
+    db_session.expire_all()
+    assert db_session.get(Estadia, estadia.id).situacao == SituacaoEstadia.EM_ACOMPANHAMENTO
+
+    outra = client.post(f"/api/estadias/{estadia.id + 99}/acompanhantes/{vinculo.id}/encerrar", json={}, headers=headers)
+    assert outra.status_code == 404

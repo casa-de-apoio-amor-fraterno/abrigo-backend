@@ -57,6 +57,10 @@ class EstadiaUpdate(EstadiaBase):
     pass
 
 
+class EstadiaAcompanhanteEncerrarRequest(BaseModel):
+    data_saida: datetime | None = None
+
+
 class EstadiaEncerrarRequest(BaseModel):
     data_saida: datetime | None = None
     # Calculado no frontend a partir de data_entrada/data_saida (ver
