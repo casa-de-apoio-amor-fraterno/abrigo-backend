@@ -182,3 +182,48 @@ class AlertaVencimentoEmprestimo(BaseModel):
     # Negativo quando já venceu (dias em atraso), positivo quando ainda
     # falta — o front decide a cor a partir daqui (ver home.page.ts).
     dias_restantes: int
+
+
+class LinkAssinaturaResponse(BaseModel):
+    """Resposta da criação: o `token` só existe aqui (é guardado apenas o
+    hash) — quem gerou monta o link com ele e o entrega à pessoa."""
+
+    id: int
+    token: str
+    # Código curto (ex.: K7M2-9PQX) — alternativa ao link, digitado na tela de login.
+    codigo: str
+    expira_em: datetime
+
+
+class LinkAssinaturaAtivoResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    criado_em: datetime
+    expira_em: datetime
+    tentativas_cpf: int
+
+
+class AssinaturaPublicaCpf(BaseModel):
+    # Só os 4 últimos dígitos do CPF (2026-10-01, pedido do time): junto com o
+    # token/código do link já basta pra confirmar, e é bem mais fácil de
+    # digitar no celular.
+    cpf_final: str = Field(pattern=r"^\d{4}$")
+
+
+class AssinaturaPublicaAssinar(AssinaturaPublicaCpf):
+    assinatura_png_base64: str = Field(min_length=1)
+
+
+class AssinaturaPublicaItem(BaseModel):
+    descricao: str
+    numero_patrimonio: str | None
+
+
+class AssinaturaPublicaResumo(BaseModel):
+    nome_pessoa: str
+    numero_contrato: str | None
+    itens: list[AssinaturaPublicaItem]
+    data_inicio: date
+    data_termino: date
+    dias: int

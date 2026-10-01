@@ -12,6 +12,7 @@ from app.features.avaliacao_social.router import router as avaliacao_social_rout
 from app.features.composicao_familiar.router import router as composicao_familiar_router
 from app.features.contrato_demo.router import router as contrato_demo_router
 from app.features.emprestimos.router import router as emprestimos_router
+from app.features.emprestimos.router_publico import router as assinatura_publica_router
 from app.features.estadias.router import router as estadias_router
 from app.features.estados.router import router as estados_router
 from app.features.hospitais.router import router as hospitais_router
@@ -61,6 +62,9 @@ app.include_router(voluntarios_router, prefix="/api/voluntarios", tags=["volunta
 app.include_router(materiais_router, prefix="/api/materiais", tags=["materiais"])
 app.include_router(materiais_locais_router, prefix="/api/materiais-locais", tags=["materiais-locais"])
 app.include_router(emprestimos_router, prefix="/api/emprestimos", tags=["emprestimos"])
+app.include_router(
+    assinatura_publica_router, prefix="/api/assinatura", tags=["assinatura-publica (sem login)"]
+)
 app.include_router(relatorios_router, prefix="/api/relatorios", tags=["relatorios"])
 app.include_router(
     solicitacoes_cadastro_router,

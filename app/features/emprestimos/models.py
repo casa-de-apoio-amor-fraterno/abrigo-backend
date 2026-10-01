@@ -129,3 +129,36 @@ class EmprestimoContrato(Base):
     assinatura: Mapped[bytes] = mapped_column(LargeBinary)
     pdf: Mapped[bytes] = mapped_column(LargeBinary)
     data_assinatura: Mapped[datetime] = mapped_column(DateTime)
+
+
+class EmprestimoLinkAssinatura(Base):
+    """Link de uso único pra a pessoa assinar o termo de comodato pelo
+    próprio celular, sem login (2026-10-01, pedido do time) — só pra
+    contratos pendentes, ou seja, empréstimos ainda sem "Comodato" assinado.
+
+    O token em si nunca é guardado: só o hash SHA-256 (`token_hash`), como
+    uma senha — quem tiver acesso ao banco não consegue montar o link. A
+    pessoa precisa informar o CPF cadastrado pra abrir o termo; erros de CPF
+    são contados (`tentativas_cpf`) e o link trava após
+    `MAX_TENTATIVAS_CPF` (ver link_assinatura.py), porque CPF sozinho é um
+    segredo fraco. Expira (`expira_em`), serve uma única vez (`usado_em`) e
+    pode ser revogado (`revogado`) — gerar um link novo revoga os anteriores
+    do empréstimo. `id_usuario` é quem gerou o link e consta como
+    responsável no contrato assinado.
+    """
+
+    __tablename__ = "emprestimo_link_assinatura"
+
+    id: Mapped[int] = mapped_column("id_emprestimo_link_assinatura", primary_key=True)
+    id_emprestimo: Mapped[int] = mapped_column(ForeignKey("emprestimo.id_emprestimo"), index=True)
+    id_usuario: Mapped[int] = mapped_column(ForeignKey("usuario.id_usuario"))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # Código curto (8 caracteres, ex.: K7M2-9PQX) que vale no lugar do token — pra
+    # pessoa digitar na tela de login ("Assinar contrato") em vez de abrir o link.
+    # Também só guardado como hash.
+    codigo_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime)
+    expira_em: Mapped[datetime] = mapped_column(DateTime)
+    tentativas_cpf: Mapped[int] = mapped_column(default=0)
+    usado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revogado: Mapped[bool] = mapped_column(default=False)

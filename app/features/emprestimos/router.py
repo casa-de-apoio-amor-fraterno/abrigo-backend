@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.features.auth.dependencies import usuario_atual
-from app.features.emprestimos import service
+from app.features.emprestimos import link_assinatura, service
 from app.features.emprestimos.schemas import (
     AlertaVencimentoEmprestimo,
     EmprestimoContratoCreate,
@@ -21,6 +21,8 @@ from app.features.emprestimos.schemas import (
     EmprestimoResponse,
     EmprestimoResumoResponse,
     EmprestimoUpdate,
+    LinkAssinaturaAtivoResponse,
+    LinkAssinaturaResponse,
     SituacaoEmprestimo,
 )
 from app.features.usuarios.models import Usuario
@@ -212,3 +214,38 @@ def assinar_contrato(
     except Base64Invalido as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return EmprestimoContratoResponse.model_validate(contrato)
+
+
+@router.post("/{emprestimo_id}/links-assinatura", response_model=LinkAssinaturaResponse, status_code=201)
+def criar_link_assinatura(
+    emprestimo_id: int,
+    usuario: Usuario = Depends(usuario_atual),
+    db: Session = Depends(get_db),
+) -> LinkAssinaturaResponse:
+    # Só pra contrato pendente (sem "Comodato" assinado) — ver
+    # `link_assinatura.criar_link`. O token só é devolvido aqui.
+    emprestimo = service.buscar(db, emprestimo_id)
+    if emprestimo is None:
+        raise HTTPException(status_code=404, detail="Empréstimo não encontrado")
+    try:
+        link, token, codigo = link_assinatura.criar_link(db, emprestimo, usuario.id)
+    except service.ContratoJaAssinado as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except link_assinatura.PessoaSemCpf as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return LinkAssinaturaResponse(id=link.id, token=token, codigo=codigo, expira_em=link.expira_em)
+
+
+@router.get("/{emprestimo_id}/links-assinatura", response_model=list[LinkAssinaturaAtivoResponse])
+def listar_links_assinatura(emprestimo_id: int, db: Session = Depends(get_db)) -> list[LinkAssinaturaAtivoResponse]:
+    if service.buscar(db, emprestimo_id) is None:
+        raise HTTPException(status_code=404, detail="Empréstimo não encontrado")
+    return [
+        LinkAssinaturaAtivoResponse.model_validate(link) for link in link_assinatura.listar_ativos(db, emprestimo_id)
+    ]
+
+
+@router.delete("/{emprestimo_id}/links-assinatura/{link_id}", status_code=204)
+def revogar_link_assinatura(emprestimo_id: int, link_id: int, db: Session = Depends(get_db)) -> None:
+    if not link_assinatura.revogar(db, emprestimo_id, link_id):
+        raise HTTPException(status_code=404, detail="Link não encontrado")
